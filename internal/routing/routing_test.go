@@ -36,6 +36,17 @@ func TestRoutingRulesAndAntiLeakAC05AC07(t *testing.T) {
 	if got := Evaluate(cfg.Routing, cfg.DNS, MatchQuery{IP: "203.0.113.10", Port: 443}, true, false); got != "direct" {
 		t.Fatalf("IPCIDR+Port rule failed, got %s", got)
 	}
+	if got := Evaluate(cfg.Routing, cfg.DNS, MatchQuery{Domain: "app-api.pixiv.net"}, true, false); got != "direct-bypass" {
+		t.Fatalf("pixiv preset domain should evaluate to direct-bypass, got %s", got)
+	}
+	if got := Evaluate(cfg.Routing, cfg.DNS, MatchQuery{Domain: "e-hentai.org"}, true, false); got != "direct-bypass" {
+		t.Fatalf("e-hentai preset domain should evaluate to direct-bypass, got %s", got)
+	}
+	cfgOff := *cfg
+	cfgOff.Routing.DirectBypass.EnableDefaultPreset = false
+	if got := Evaluate(cfgOff.Routing, cfgOff.DNS, MatchQuery{Domain: "app-api.pixiv.net"}, true, false); got != "proxy" {
+		t.Fatalf("pixiv should fall back to proxy when direct-bypass preset is disabled, got %s", got)
+	}
 	if got := Evaluate(cfg.Routing, cfg.DNS, MatchQuery{Domain: "www.baidu.com"}, true, false); got != "direct" {
 		t.Fatalf("CN domain should be direct, got %s", got)
 	}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mumu-lhl/my-vpn/internal/bootstrap"
 	"github.com/mumu-lhl/my-vpn/internal/config"
 )
 
@@ -20,6 +21,18 @@ const (
 	DefaultGeoSiteCN  = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
 	DefaultGeoSiteAds = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
 )
+
+// DefaultDirectBypassDomains lists sites typically affected by DNS/SNI filtering while remaining IP-reachable.
+var DefaultDirectBypassDomains = []string{
+	"pixiv.net",
+	"pximg.net",
+	"e-hentai.org",
+	"exhentai.org",
+	"ehgt.org",
+	"github.com",
+	"githubusercontent.com",
+	"wikipedia.org",
+}
 
 // CompileRoute builds sing-box route.rules and route.rule_set from RoutingConfig and anti-leak DNS settings.
 func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, finalTag string, chainSupportsUDP, chainSupportsIPv6 bool) map[string]any {
@@ -100,12 +113,20 @@ func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, 
 			rule["action"] = "reject"
 		case "direct":
 			rule["outbound"] = "direct"
+		case "direct-bypass":
+			rule["outbound"] = "direct-bypass"
 		case "proxy", "":
 			rule["outbound"] = finalTag
 		default:
 			rule["outbound"] = r.Action
 		}
 		rules = append(rules, rule)
+	}
+	if rc.DirectBypass.EnableDefaultPreset {
+		rules = append(rules, map[string]any{
+			"domain_suffix": DefaultDirectBypassDomains,
+			"outbound":      "direct-bypass",
+		})
 	}
 	if rc.BypassCN {
 		ruleSets = append(ruleSets,
@@ -173,7 +194,7 @@ type MatchQuery struct {
 	PackageName string
 }
 
-// Evaluate returns the route action ("direct", "reject", "proxy", or custom outbound) matching CompileRoute precedence.
+// Evaluate returns the route action ("direct", "direct-bypass", "reject", "proxy", or custom outbound) matching CompileRoute precedence.
 func Evaluate(rc config.RoutingConfig, dns config.DNSConfig, q MatchQuery, chainSupportsUDP, chainSupportsIPv6 bool) string {
 	if strings.EqualFold(q.ProcessName, "geph5-client") || strings.EqualFold(q.ProcessName, "libgeph5.so") {
 		return "direct"
@@ -199,6 +220,9 @@ func Evaluate(rc config.RoutingConfig, dns config.DNSConfig, q MatchQuery, chain
 			return r.Action
 		}
 	}
+	if rc.DirectBypass.EnableDefaultPreset && matchesDomainSuffix(q.Domain, DefaultDirectBypassDomains) {
+		return "direct-bypass"
+	}
 	if rc.BypassCN && (strings.HasSuffix(strings.ToLower(q.Domain), ".cn") || strings.EqualFold(q.Domain, "baidu.com") || strings.HasSuffix(strings.ToLower(q.Domain), ".baidu.com")) {
 		return "direct"
 	}
@@ -217,6 +241,17 @@ func isCommonAdDomain(d string) bool {
 	ld := strings.ToLower(d)
 	for _, s := range []string{"doubleclick.net", "googlesyndication.com", "adservice.google.com"} {
 		if ld == s || strings.HasSuffix(ld, "."+s) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesDomainSuffix(domain string, suffixes []string) bool {
+	ld := strings.ToLower(domain)
+	for _, s := range suffixes {
+		ls := strings.ToLower(s)
+		if ld == ls || strings.HasSuffix(ld, "."+ls) {
 			return true
 		}
 	}
@@ -339,10 +374,10 @@ func matchesCustomRule(r config.CustomRule, q MatchQuery) bool {
 	return matchedAny
 }
 
-// DownloadRuleSet fetches a .srs rule-set atomically to cacheDir.
+// DownloadRuleSet fetches a .srs rule-set atomically to cacheDir using static-IP DoH bootstrap by default.
 func DownloadRuleSet(ctx context.Context, client *http.Client, tag, url, cacheDir string) (string, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = bootstrap.NewHTTPClient(bootstrap.Options{Timeout: 30 * time.Second})
 	}
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", err

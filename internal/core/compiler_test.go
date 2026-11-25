@@ -60,6 +60,9 @@ func TestCompileWarpPsiphonGephAndAutoMasqueH2AC02AC04AC06(t *testing.T) {
 	if !strings.Contains(rawStr, `"hijack-dns"`) || !strings.Contains(rawStr, `"dns-proxy"`) || !strings.Contains(rawStr, `"file_descriptor": 42`) {
 		t.Fatalf("missing anti-leak DNS hijack or TUN fd in compiled config")
 	}
+	if !strings.Contains(rawStr, `"tag": "direct-bypass"`) || !strings.Contains(rawStr, `"tls_fragment": true`) || !strings.Contains(rawStr, `"pixiv.net"`) {
+		t.Fatalf("missing direct-bypass TLS fragment outbound or preset route in compiled config")
+	}
 	if !strings.Contains(rawStr, `"find_process": true`) || !strings.Contains(rawStr, `"geph5-client"`) {
 		t.Fatalf("missing geph5-client anti-loop route/dns bypass in compiled config")
 	}

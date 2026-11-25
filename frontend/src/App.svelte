@@ -54,6 +54,7 @@
 
   let bypassCN = $state(true);
   let blockAds = $state(true);
+  let directBypass = $state(true);
   let fakeIP = $state(true);
   let directDNS = $state("https://dns.alidns.com/dns-query");
   let proxyDNS = $state("https://1.1.1.1/dns-query");
@@ -398,6 +399,10 @@
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" bind:checked={blockAds} />
           <span>拦截广告与跟踪器 (geosite-category-ads-all)</span>
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" bind:checked={directBypass} />
+          <span>启用轻量直连破壁 (direct-bypass · TLS 分片直连 Pixiv / E-Hentai / GitHub 等)</span>
         </label>
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" bind:checked={fakeIP} />

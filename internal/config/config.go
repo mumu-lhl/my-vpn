@@ -83,7 +83,7 @@ type WarpConfig struct {
 	DeviceID        string         `json:"device_id,omitempty"`
 	PrivateKey      string         `json:"private_key,omitempty"`
 	ForceRegister   bool           `json:"force_register"`
-	MTU             int            `json:"mtu"` // 0 means auto
+	MTU             int            `json:"mtu"`           // 0 means auto
 	EndpointMode    string         `json:"endpoint_mode"` // cloudflare, scan, custom
 	CleanIP         string         `json:"clean_ip,omitempty"`
 	Port            int            `json:"port,omitempty"`
@@ -156,16 +156,24 @@ type CustomRule struct {
 	ProcessName   []string `json:"process_name,omitempty"`
 	PackageName   []string `json:"package_name,omitempty"`
 	RuleSet       []string `json:"rule_set,omitempty"`
-	Action        string   `json:"action"` // proxy, direct, reject, or node:<id>
+	Action        string   `json:"action"` // proxy, direct, direct-bypass, reject, or node:<id>
+}
+
+type DirectBypassConfig struct {
+	EnableDefaultPreset bool   `json:"enable_default_preset"`
+	TLSFragmentSize     string `json:"tls_fragment_size"`
+	TLSFragmentSleep    string `json:"tls_fragment_sleep"`
+	TLSRecordFragment   bool   `json:"tls_record_fragment"`
 }
 
 type RoutingConfig struct {
-	BypassCN           bool            `json:"bypass_cn"`
-	BlockAds           bool            `json:"block_ads"`
-	BypassPrivate      bool            `json:"bypass_private"`
-	RuleSetUpdateHours int             `json:"rule_set_update_hours"`
-	RemoteRuleSets     []RemoteRuleSet `json:"remote_rule_sets,omitempty"`
-	CustomRules        []CustomRule    `json:"custom_rules,omitempty"`
+	BypassCN           bool               `json:"bypass_cn"`
+	BlockAds           bool               `json:"block_ads"`
+	BypassPrivate      bool               `json:"bypass_private"`
+	DirectBypass       DirectBypassConfig `json:"direct_bypass"`
+	RuleSetUpdateHours int                `json:"rule_set_update_hours"`
+	RemoteRuleSets     []RemoteRuleSet    `json:"remote_rule_sets,omitempty"`
+	CustomRules        []CustomRule       `json:"custom_rules,omitempty"`
 }
 
 type DNSConfig struct {
@@ -234,9 +242,15 @@ func DefaultConfig() *AppConfig {
 			},
 		},
 		Routing: RoutingConfig{
-			BypassCN:           true,
-			BlockAds:           true,
-			BypassPrivate:      true,
+			BypassCN:      true,
+			BlockAds:      true,
+			BypassPrivate: true,
+			DirectBypass: DirectBypassConfig{
+				EnableDefaultPreset: true,
+				TLSFragmentSize:     "10-30",
+				TLSFragmentSleep:    "2-8ms",
+				TLSRecordFragment:   true,
+			},
 			RuleSetUpdateHours: 24,
 		},
 		DNS: DNSConfig{

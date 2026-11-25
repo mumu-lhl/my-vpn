@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mumu-lhl/my-vpn/internal/bootstrap"
 	"github.com/mumu-lhl/my-vpn/internal/config"
 	"gopkg.in/yaml.v3"
 )
@@ -387,7 +388,7 @@ type Fetcher struct {
 func (f *Fetcher) Fetch(ctx context.Context, sub config.Subscription) ([]config.ExternalNode, error) {
 	cli := f.Client
 	if cli == nil {
-		cli = &http.Client{Timeout: 20 * time.Second}
+		cli = bootstrap.NewHTTPClient(bootstrap.Options{Timeout: 20 * time.Second})
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sub.URL, nil)
 	if err != nil {

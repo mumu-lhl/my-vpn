@@ -214,10 +214,31 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 		chainIPv6 = hop2IPv6
 	}
 
-	outbounds = append(outbounds, map[string]any{
-		"type": "direct",
-		"tag":  "direct",
-	})
+	fragSize := cfg.Routing.DirectBypass.TLSFragmentSize
+	if fragSize == "" {
+		fragSize = "10-30"
+	}
+	fragSleep := cfg.Routing.DirectBypass.TLSFragmentSleep
+	if fragSleep == "" {
+		fragSleep = "2-8ms"
+	}
+	outbounds = append(outbounds,
+		map[string]any{
+			"type": "direct",
+			"tag":  "direct",
+		},
+		map[string]any{
+			"type":                "direct",
+			"tag":                 "direct-bypass",
+			"tls_fragment":        true,
+			"tls_record_fragment": cfg.Routing.DirectBypass.TLSRecordFragment,
+			"tls_tricks": map[string]any{
+				"mixedcase_sni":  true,
+				"fragment_size":  fragSize,
+				"fragment_sleep": fragSleep,
+			},
+		},
+	)
 
 	listenAddr := "127.0.0.1"
 	if cfg.Inbound.AllowLAN {
@@ -285,6 +306,13 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 		"process_name": []string{"geph5-client", "libgeph5.so"},
 		"server":       "dns-direct",
 	})
+	if cfg.Routing.DirectBypass.EnableDefaultPreset {
+		// Resolve direct-bypass domains via encrypted proxy DNS to avoid ISP DNS poisoning.
+		dnsRules = append(dnsRules, map[string]any{
+			"domain_suffix": routing.DefaultDirectBypassDomains,
+			"server":        "dns-proxy",
+		})
+	}
 	if cfg.Routing.BypassCN {
 		dnsRules = append(dnsRules, map[string]any{
 			"rule_set": []string{"geosite-cn"},
