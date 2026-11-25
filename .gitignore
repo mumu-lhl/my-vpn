@@ -1,0 +1,27 @@
+# Build outputs
+/build/
+/dist/
+/bin/
+/.mygo/
+*.apk
+*.aab
+*.deb
+*.rpm
+*.tar.gz
+core-helper
+my-vpn
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.svelte-kit/
+
+# Local runtime & secrets
+*.local.json
+*.yaml.local
+.env
+.env.*
+
+# Prebuilt sidecars
+third_party/geph5-build/out/
+plugins/android-vpn/android/src/main/jniLibs/
