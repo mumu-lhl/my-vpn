@@ -21,6 +21,7 @@ const (
 	DefaultGeoSiteAds = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
 )
 
+// CompileRoute builds sing-box route.rules and route.rule_set from RoutingConfig and anti-leak DNS settings.
 func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, finalTag string, chainSupportsUDP, chainSupportsIPv6 bool) map[string]any {
 	var rules []map[string]any
 	var ruleSets []map[string]any
@@ -32,12 +33,13 @@ func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, 
 		})
 	}
 
-	// Prevent Linux TUN routing loop when geph5-client sidecar runs as Hop 1/Hop 2
+	// Prevent Linux TUN routing loop when geph5-client sidecar runs as Hop 1/Hop 2.
 	rules = append(rules, map[string]any{
 		"process_name": []string{"geph5-client", "libgeph5.so"},
 		"outbound":     "direct",
 	})
 
+	// Required for LAN proxy sharing and local network reachability.
 	if rc.BypassPrivate || allowLAN {
 		rules = append(rules, map[string]any{
 			"ip_is_private": true,
@@ -57,6 +59,7 @@ func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, 
 			"action":   "reject",
 		})
 	}
+	// Custom rules take precedence over the default CN direct preset.
 	for _, r := range rc.CustomRules {
 		if !r.Enabled {
 			continue
@@ -138,12 +141,14 @@ func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, 
 			"download_detour": finalTag,
 		})
 	}
+	// Reject non-direct UDP on TCP-only chains to prevent WebRTC/STUN direct leaks.
 	if dns.RejectNonDirectUDPWhenTCPOnly && !chainSupportsUDP {
 		rules = append(rules, map[string]any{
 			"network": "udp",
 			"action":  "reject",
 		})
 	}
+	// Reject non-direct IPv6 when exit lacks IPv6 to prevent bypass leaks.
 	if dns.BlockNonDirectIPv6WhenUnsupported && !chainSupportsIPv6 {
 		rules = append(rules, map[string]any{
 			"ip_version": 6,
@@ -163,11 +168,12 @@ type MatchQuery struct {
 	Domain      string
 	IP          string
 	Port        int
-	Network     string
+	Network     string // tcp / udp
 	ProcessName string
 	PackageName string
 }
 
+// Evaluate returns the route action ("direct", "reject", "proxy", or custom outbound) matching CompileRoute precedence.
 func Evaluate(rc config.RoutingConfig, dns config.DNSConfig, q MatchQuery, chainSupportsUDP, chainSupportsIPv6 bool) string {
 	if strings.EqualFold(q.ProcessName, "geph5-client") || strings.EqualFold(q.ProcessName, "libgeph5.so") {
 		return "direct"
@@ -333,6 +339,7 @@ func matchesCustomRule(r config.CustomRule, q MatchQuery) bool {
 	return matchedAny
 }
 
+// DownloadRuleSet fetches a .srs rule-set atomically to cacheDir.
 func DownloadRuleSet(ctx context.Context, client *http.Client, tag, url, cacheDir string) (string, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
