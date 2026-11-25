@@ -28,6 +28,10 @@ type TrafficStats struct {
 	ChainDesc string `json:"chain_desc"`
 }
 
+// Engine manages the lifecycle of the local proxy / sing-box core.
+// If MYVPN_SINGBOX_BIN is set and executable, it runs hiddify-sing-box directly;
+// otherwise it runs the built-in Go SOCKS5/HTTP routing & chaining proxy engine
+// (used for local dev, unit/integration loopback tests, and proxy-only fallback).
 type Engine struct {
 	mu           sync.Mutex
 	running      bool
@@ -38,7 +42,7 @@ type Engine struct {
 	cmd          *exec.Cmd
 	socksLn      net.Listener
 	httpSrv      *http.Server
-	upstreamAddr string
+	upstreamAddr string // optional SOCKS5 upstream for loopback/sidecar chaining
 	upBytes      atomic.Int64
 	downBytes    atomic.Int64
 }

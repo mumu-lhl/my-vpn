@@ -41,6 +41,7 @@ func main() {
 		openMain()
 	})
 
+	// Keep alive in SNI tray on Linux (niri/Wayland) when window closes
 	app.OnWindowAllClosed(func() {
 		mainWin = nil
 	})

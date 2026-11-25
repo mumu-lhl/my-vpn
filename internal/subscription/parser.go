@@ -19,6 +19,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ParseAuto detects and parses sing-box JSON, Clash/Mihomo YAML, Base64 URI bundles,
+// or raw newline-separated share URIs (vless, vmess, trojan, ss, hy2, tuic, wg).
 func ParseAuto(raw []byte, subID string) ([]config.ExternalNode, error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" {

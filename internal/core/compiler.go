@@ -21,6 +21,7 @@ type CompileResult struct {
 	Warnings         []CompileWarning `json:"warnings,omitempty"`
 }
 
+// CompileSingBoxConfig translates AppConfig into a complete hiddify-sing-box v5 JSON configuration.
 func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -204,6 +205,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 			return nil, fmt.Errorf("build hop2: %w", err)
 		}
 		finalTag = "hop-2"
+		// If Hop 2 is WARP over MASQUE H2 (IP-in-HTTP/2), WARP itself carries UDP inside TCP H2.
 		if forceH2 {
 			chainUDP = true
 		} else {
@@ -278,7 +280,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	var dnsRules []map[string]any
-	// Prevent DNS bootstrap deadlock when geph5-client resolves broker/bridge hostnames in TUN mode
+	// Prevent DNS bootstrap deadlock when geph5-client resolves broker/bridge hostnames in TUN mode.
 	dnsRules = append(dnsRules, map[string]any{
 		"process_name": []string{"geph5-client", "libgeph5.so"},
 		"server":       "dns-direct",

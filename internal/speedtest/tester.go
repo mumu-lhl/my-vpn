@@ -12,7 +12,7 @@ import (
 
 type Result struct {
 	NodeID    string `json:"node_id"`
-	LatencyMs int    `json:"latency_ms"`
+	LatencyMs int    `json:"latency_ms"` // -1 on error/timeout
 	Err       string `json:"err,omitempty"`
 }
 

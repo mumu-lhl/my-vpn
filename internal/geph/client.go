@@ -25,6 +25,7 @@ type ExitLocation struct {
 	Load    float64 `json:"load,omitempty"`
 }
 
+// GenerateYAML produces a valid geph5-client configuration YAML matching geph5-client Config struct.
 func GenerateYAML(cfg config.GephConfig) ([]byte, error) {
 	if strings.TrimSpace(cfg.Secret) == "" {
 		return nil, errors.New("geph secret is required")
@@ -132,6 +133,7 @@ func (s *Supervisor) Stop() error {
 	return nil
 }
 
+// FetchExits queries geph5-client's nanorpc control_listen endpoint for available exit locations.
 func (s *Supervisor) FetchExits(ctx context.Context, overrideURL string) ([]ExitLocation, error) {
 	endpoint := s.controlURL
 	if overrideURL != "" {

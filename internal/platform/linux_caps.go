@@ -10,6 +10,8 @@ import (
 
 const RequiredHelperCaps = "cap_net_admin,cap_net_raw+ep"
 
+// HasTUNCapabilities checks if core-helper already holds cap_net_admin and cap_net_raw
+// via getcap, enabling passwordless TUN toggling (Route A, AC-10).
 func HasTUNCapabilities(helperPath string) (bool, string, error) {
 	out, err := exec.Command("getcap", helperPath).CombinedOutput()
 	if err != nil {
@@ -23,6 +25,7 @@ func ParseGetcapOutput(out string) bool {
 	return strings.Contains(lower, "cap_net_admin") && strings.Contains(lower, "cap_net_raw")
 }
 
+// GrantTUNCapabilitiesOnce runs pkexec setcap once on the non-GUI core-helper binary.
 func GrantTUNCapabilitiesOnce(helperPath string) error {
 	cmd := exec.Command("pkexec", "setcap", RequiredHelperCaps, helperPath)
 	var stderr bytes.Buffer
@@ -33,9 +36,10 @@ func GrantTUNCapabilitiesOnce(helperPath string) error {
 	return nil
 }
 
+// SetGNOMESystemProxy configures gsettings proxy keys (used by GTK/GNOME apps on niri/Wayland).
 func SetGNOMESystemProxy(enabled bool, httpPort, socksPort int) error {
 	if _, err := exec.LookPath("gsettings"); err != nil {
-		return nil
+		return nil // non-GNOME Wayland session without gsettings
 	}
 	if !enabled {
 		return exec.Command("gsettings", "set", "org.gnome.system.proxy", "mode", "none").Run()
@@ -57,6 +61,7 @@ func SetGNOMESystemProxy(enabled bool, httpPort, socksPort int) error {
 	return nil
 }
 
+// LocalLANIP returns the primary non-loopback IPv4 address for LAN proxy sharing display.
 func LocalLANIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

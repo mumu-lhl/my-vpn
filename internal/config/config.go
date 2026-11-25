@@ -64,7 +64,7 @@ type ChainConfig struct {
 
 type GephConfig struct {
 	Secret         string `json:"secret"`
-	ExitCountry    string `json:"exit_country"`
+	ExitCountry    string `json:"exit_country"` // "" or "auto" means auto
 	ExitCity       string `json:"exit_city,omitempty"`
 	BrokerURL      string `json:"broker_url,omitempty"`
 	LocalSocksPort int    `json:"local_socks_port"`
@@ -72,23 +72,23 @@ type GephConfig struct {
 }
 
 type PsiphonConfig struct {
-	EgressRegion              string `json:"egress_region"`
+	EgressRegion              string `json:"egress_region"` // "" means auto
 	EstablishTunnelTimeoutSec int    `json:"establish_tunnel_timeout_sec"`
 	DataDirectory             string `json:"data_directory,omitempty"`
 }
 
 type WarpConfig struct {
-	Mode            string         `json:"mode"`
+	Mode            string         `json:"mode"` // auto, wg, awg, masque
 	LicenseKey      string         `json:"license_key,omitempty"`
 	DeviceID        string         `json:"device_id,omitempty"`
 	PrivateKey      string         `json:"private_key,omitempty"`
 	ForceRegister   bool           `json:"force_register"`
-	MTU             int            `json:"mtu"`
-	EndpointMode    string         `json:"endpoint_mode"`
+	MTU             int            `json:"mtu"` // 0 means auto
+	EndpointMode    string         `json:"endpoint_mode"` // cloudflare, scan, custom
 	CleanIP         string         `json:"clean_ip,omitempty"`
 	Port            int            `json:"port,omitempty"`
 	NoiseCount      string         `json:"noise_count,omitempty"`
-	NoiseMode       string         `json:"noise_mode,omitempty"`
+	NoiseMode       string         `json:"noise_mode,omitempty"` // standard, random, quic, dns, sip, stun
 	NoiseSize       string         `json:"noise_size,omitempty"`
 	NoiseDelayMs    string         `json:"noise_delay_ms,omitempty"`
 	ScannerMaxRTTMs int            `json:"scanner_max_rtt_ms,omitempty"`
@@ -105,7 +105,7 @@ type WarpAWGConfig struct {
 }
 
 type WarpMASQUEConf struct {
-	VHTTP        string `json:"vhttp"`
+	VHTTP        string `json:"vhttp"` // auto, h3, h2
 	ServerName   string `json:"server_name,omitempty"`
 	IPv6         bool   `json:"ipv6"`
 	KeepaliveSec int    `json:"keepalive_sec,omitempty"`
@@ -126,7 +126,7 @@ type ExternalNode struct {
 	ID             string         `json:"id"`
 	SubscriptionID string         `json:"subscription_id,omitempty"`
 	Name           string         `json:"name"`
-	Protocol       string         `json:"protocol"`
+	Protocol       string         `json:"protocol"` // vless, vmess, trojan, shadowsocks, hysteria2, tuic, wireguard, socks, http
 	Server         string         `json:"server"`
 	Port           int            `json:"port"`
 	SupportsUDP    bool           `json:"supports_udp"`
@@ -156,7 +156,7 @@ type CustomRule struct {
 	ProcessName   []string `json:"process_name,omitempty"`
 	PackageName   []string `json:"package_name,omitempty"`
 	RuleSet       []string `json:"rule_set,omitempty"`
-	Action        string   `json:"action"`
+	Action        string   `json:"action"` // proxy, direct, reject, or node:<id>
 }
 
 type RoutingConfig struct {
