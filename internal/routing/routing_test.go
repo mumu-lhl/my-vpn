@@ -18,6 +18,9 @@ func TestRoutingRulesAndAntiLeakAC05AC07(t *testing.T) {
 		{ID: "r3", Enabled: true, IPCIDR: []string{"203.0.113.0/24"}, Port: []int{443}, Action: "direct"},
 	}
 
+	if got := Evaluate(cfg.Routing, cfg.DNS, MatchQuery{Domain: "broker.geph.io", ProcessName: "geph5-client"}, true, false); got != "direct" {
+		t.Fatalf("geph5-client process must bypass tunnel to prevent loop, got %s", got)
+	}
 	if got := Evaluate(cfg.Routing, cfg.DNS, MatchQuery{IP: "192.168.1.50"}, true, false); got != "direct" {
 		t.Fatalf("private IP should be direct, got %s", got)
 	}

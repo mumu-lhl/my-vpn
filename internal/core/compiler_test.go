@@ -60,6 +60,9 @@ func TestCompileWarpPsiphonGephAndAutoMasqueH2AC02AC04AC06(t *testing.T) {
 	if !strings.Contains(rawStr, `"hijack-dns"`) || !strings.Contains(rawStr, `"dns-proxy"`) || !strings.Contains(rawStr, `"file_descriptor": 42`) {
 		t.Fatalf("missing anti-leak DNS hijack or TUN fd in compiled config")
 	}
+	if !strings.Contains(rawStr, `"find_process": true`) || !strings.Contains(rawStr, `"geph5-client"`) {
+		t.Fatalf("missing geph5-client anti-loop route/dns bypass in compiled config")
+	}
 }
 
 func TestLoopbackTwoHopChainingAndAdBlockIntegration(t *testing.T) {
@@ -95,7 +98,7 @@ func TestLoopbackTwoHopChainingAndAdBlockIntegration(t *testing.T) {
 	defer eng2.Stop()
 
 	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", p4))
-	cli := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	cli := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}}
 	resp, err := cli.Get(target.URL)
 	if err != nil {
 		t.Fatalf("chained HTTP request failed: %v", err)

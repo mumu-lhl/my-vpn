@@ -31,6 +31,13 @@ func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, 
 			"action":   "hijack-dns",
 		})
 	}
+
+	// Prevent Linux TUN routing loop when geph5-client sidecar runs as Hop 1/Hop 2
+	rules = append(rules, map[string]any{
+		"process_name": []string{"geph5-client", "libgeph5.so"},
+		"outbound":     "direct",
+	})
+
 	if rc.BypassPrivate || allowLAN {
 		rules = append(rules, map[string]any{
 			"ip_is_private": true,
@@ -145,6 +152,7 @@ func CompileRoute(rc config.RoutingConfig, dns config.DNSConfig, allowLAN bool, 
 	}
 	return map[string]any{
 		"auto_detect_interface": true,
+		"find_process":          true,
 		"final":                 finalTag,
 		"rules":                 rules,
 		"rule_set":              ruleSets,
@@ -161,6 +169,9 @@ type MatchQuery struct {
 }
 
 func Evaluate(rc config.RoutingConfig, dns config.DNSConfig, q MatchQuery, chainSupportsUDP, chainSupportsIPv6 bool) string {
+	if strings.EqualFold(q.ProcessName, "geph5-client") || strings.EqualFold(q.ProcessName, "libgeph5.so") {
+		return "direct"
+	}
 	if rc.BypassPrivate && q.IP != "" {
 		if addr, err := netip.ParseAddr(q.IP); err == nil {
 			if addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() {

@@ -278,6 +278,11 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	var dnsRules []map[string]any
+	// Prevent DNS bootstrap deadlock when geph5-client resolves broker/bridge hostnames in TUN mode
+	dnsRules = append(dnsRules, map[string]any{
+		"process_name": []string{"geph5-client", "libgeph5.so"},
+		"server":       "dns-direct",
+	})
 	if cfg.Routing.BypassCN {
 		dnsRules = append(dnsRules, map[string]any{
 			"rule_set": []string{"geosite-cn"},
