@@ -1,6 +1,7 @@
-.PHONY: build build-helper test test-go test-frontend test-e2e clean
+.PHONY: build build-helper test test-go test-frontend check-frontend lint-frontend fmt-frontend test-e2e clean
 
 GO ?= go
+BUN ?= bun
 GOPROXY ?= direct,https://proxy.golang.org
 
 build: build-helper
@@ -15,7 +16,16 @@ test-go:
 	GOPROXY=$(GOPROXY) $(GO) test -v -race ./...
 
 test-frontend:
-	npm --prefix frontend test
+	$(BUN) --cwd frontend test
+
+check-frontend:
+	$(BUN) --cwd frontend check
+
+lint-frontend:
+	$(BUN) --cwd frontend run lint
+
+fmt-frontend:
+	$(BUN) --cwd frontend fmt src
 
 test-e2e: build
 	bash tests/e2e-linux/run_e2e.sh

@@ -30,12 +30,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-      - name: Install, test, and build Svelte frontend
+          bun-version: latest
+      - name: Install, fmt, check, lint, test, and build Svelte frontend
         working-directory: frontend
         run: |
-          npm ci || npm install
-          npm test
-          npm run build
+          bun install --frozen-lockfile || bun install
+          bun fmt --check src
+          bun check
+          bun run lint
+          bun test
+          bun run build

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { analyzeChain, formatBytes } from "./chain";
 
 describe("analyzeChain (AC-04)", () => {

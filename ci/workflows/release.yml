@@ -13,9 +13,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.4'
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
+          bun-version: latest
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -23,8 +23,8 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm ci || npm install
-          npm run build
+          bun install --frozen-lockfile || bun install
+          bun run build
       - name: Build Linux binaries
         env:
           GOPROXY: direct,https://proxy.golang.org
@@ -47,16 +47,16 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
+          bun-version: latest
       - name: Setup Android NDK
         uses: android-actions/setup-android@v3
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm ci || npm install
-          npm run build
+          bun install --frozen-lockfile || bun install
+          bun run build
       - name: Build Android arm64-v8a APK
         env:
           GOPROXY: direct,https://proxy.golang.org
