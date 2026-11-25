@@ -119,3 +119,11 @@ func (s *AppService) FetchGephExits(ctx context.Context) ([]geph.ExitLocation, e
 	cfg := s.store.Get()
 	return s.geph.FetchExits(ctx, fmt.Sprintf("http://127.0.0.1:%d", cfg.Geph.ControlPort))
 }
+
+func (s *AppService) GetClassicCNApps() []platform.ClassicCNApp {
+	return platform.ClassicCNApps
+}
+
+func (s *AppService) DetectCNApps(apps []platform.InstalledApp) []platform.DetectedCNApp {
+	return platform.DetectChinaApps(apps)
+}

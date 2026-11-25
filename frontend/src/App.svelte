@@ -11,11 +11,20 @@
     Settings,
     Shield,
     ShieldAlert,
+    Sparkles,
     Sun,
+    Trash2,
     Wifi,
+    Zap,
   } from "@lucide/svelte";
   import { analyzeChain, formatBytes, type ChainConfig, type HopKind } from "./lib/chain";
   import { applyTheme, type ThemeMode } from "./lib/theme";
+  import {
+    CLASSIC_CN_APPS,
+    detectChinaApps,
+    mergeUniquePackages,
+    type DetectedCNApp,
+  } from "./lib/cn_apps";
 
   type Tab = "dashboard" | "chain" | "protocols" | "routing" | "settings";
   let activeTab = $state<Tab>("dashboard");
@@ -48,6 +57,40 @@
   let fakeIP = $state(true);
   let directDNS = $state("https://dns.alidns.com/dns-query");
   let proxyDNS = $state("https://1.1.1.1/dns-query");
+
+  let perAppMode = $state<"all" | "whitelist" | "blacklist">("blacklist");
+  let excludedPackages = $state<string[]>([]);
+  let detectedPreview = $state<DetectedCNApp[]>([]);
+  let detectNotice = $state("");
+
+  function addClassicCNApps() {
+    perAppMode = "blacklist";
+    excludedPackages = mergeUniquePackages(
+      excludedPackages,
+      CLASSIC_CN_APPS.map((a) => a.package_name),
+    );
+    detectNotice = `已一键添加 ${CLASSIC_CN_APPS.length} 个经典中国软件（微信、QQ、小红书等）到排除列表`;
+  }
+
+  function autoDetectCNApps() {
+    perAppMode = "blacklist";
+    const detected = detectChinaApps(
+      CLASSIC_CN_APPS.slice(0, 8).map((a) => ({
+        package_name: a.package_name,
+        label: a.name,
+      })),
+    );
+    detectedPreview = detected;
+    excludedPackages = mergeUniquePackages(
+      excludedPackages,
+      detected.map((d) => d.package_name),
+    );
+    detectNotice = `自动识别出 ${detected.length} 个需要排除的中国软件并已加入黑名单`;
+  }
+
+  function removeExcludedPackage(pkg: string) {
+    excludedPackages = excludedPackages.filter((p) => p !== pkg);
+  }
 
   let chainInfo = $derived(analyzeChain(chain));
 
@@ -417,6 +460,71 @@
         <p class="text-sm text-slate-600 dark:text-slate-300">
           Android 10+ (arm64-v8a)：支持 VpnService 分应用白/黑名单、局域网共享与前台速率通知栏。
         </p>
+      </section>
+
+      <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div>
+            <h2 class="text-lg font-semibold">Android 分应用排除代理</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              快速排除微信、QQ、小红书等经典中国软件，或按包名/商店来源/中文名自动识别
+            </p>
+          </div>
+          <select
+            class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+            bind:value={perAppMode}
+          >
+            <option value="all">全局代理所有应用</option>
+            <option value="blacklist">排除选中应用（黑名单）</option>
+            <option value="whitelist">仅代理选中应用（白名单）</option>
+          </select>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button
+            class="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-sky-700"
+            onclick={addClassicCNApps}
+          >
+            <Zap class="h-4 w-4" />
+            <span>一键添加经典中国软件</span>
+          </button>
+          <button
+            class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
+            onclick={autoDetectCNApps}
+          >
+            <Sparkles class="h-4 w-4" />
+            <span>自动识别中国软件</span>
+          </button>
+        </div>
+
+        {#if detectNotice}
+          <p class="text-xs text-emerald-600 dark:text-emerald-400">{detectNotice}</p>
+        {/if}
+
+        {#if excludedPackages.length > 0}
+          <div class="flex flex-wrap gap-1.5">
+            {#each excludedPackages as pkg}
+              <span class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span>{pkg}</span>
+                <button
+                  class="text-slate-400 hover:text-rose-500"
+                  title="移除"
+                  onclick={() => removeExcludedPackage(pkg)}
+                >
+                  <Trash2 class="h-3 w-3" />
+                </button>
+              </span>
+            {/each}
+          </div>
+        {/if}
+
+        {#if detectedPreview.length > 0}
+          <div class="space-y-1 text-xs text-slate-500 dark:text-slate-400">
+            {#each detectedPreview as item}
+              <div>{item.label} ({item.package_name}) · {item.reason}</div>
+            {/each}
+          </div>
+        {/if}
       </section>
     {/if}
   </main>

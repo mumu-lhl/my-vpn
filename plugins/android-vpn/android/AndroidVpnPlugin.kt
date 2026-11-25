@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.VpnService
+import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -61,11 +62,22 @@ class AndroidVpnPlugin : MyGoPlugin {
                 val arr = JSONArray()
                 for (app in apps) {
                     val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val installer = try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            pm.getInstallSourceInfo(app.packageName).installingPackageName ?: ""
+                        } else {
+                            @Suppress("DEPRECATION")
+                            pm.getInstallerPackageName(app.packageName) ?: ""
+                        }
+                    } catch (_: Exception) {
+                        ""
+                    }
                     arr.put(
                         JSONObject()
                             .put("package_name", app.packageName)
                             .put("label", pm.getApplicationLabel(app).toString())
                             .put("is_system", isSystem)
+                            .put("installer_package", installer)
                     )
                 }
                 reply.success(JSONObject().put("apps", arr))
