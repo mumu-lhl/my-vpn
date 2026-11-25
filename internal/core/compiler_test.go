@@ -18,6 +18,7 @@ import (
 func TestCompileWarpPsiphonGephAndAutoMasqueH2AC02AC04AC06(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Inbound.Mode = config.InboundTUN
+	cfg.Inbound.KillSwitch = true
 	cfg.Chain.TwoHop = true
 	cfg.Chain.Hop1 = config.HopRef{Kind: config.HopPsiphon}
 	cfg.Chain.Hop2 = config.HopRef{Kind: config.HopWarp}
@@ -62,6 +63,9 @@ func TestCompileWarpPsiphonGephAndAutoMasqueH2AC02AC04AC06(t *testing.T) {
 	}
 	if !strings.Contains(rawStr, `"tag": "direct-bypass"`) || !strings.Contains(rawStr, `"tls_fragment": true`) || !strings.Contains(rawStr, `"pixiv.net"`) {
 		t.Fatalf("missing direct-bypass TLS fragment outbound or preset route in compiled config")
+	}
+	if !strings.Contains(rawStr, `"default_mark": 8230`) {
+		t.Fatalf("expected route.default_mark=8230 when KillSwitch is enabled")
 	}
 	if !strings.Contains(rawStr, `"find_process": true`) || !strings.Contains(rawStr, `"geph5-client"`) {
 		t.Fatalf("missing geph5-client anti-loop route/dns bypass in compiled config")

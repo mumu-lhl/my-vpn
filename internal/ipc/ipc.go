@@ -15,6 +15,7 @@ import (
 
 	"github.com/mumu-lhl/my-vpn/internal/config"
 	"github.com/mumu-lhl/my-vpn/internal/core"
+	"github.com/mumu-lhl/my-vpn/internal/platform"
 )
 
 type StartRequest struct {
@@ -28,16 +29,38 @@ type StartResponse struct {
 	Error    string                `json:"error,omitempty"`
 }
 
+type KillSwitchRequest struct {
+	Enabled  bool   `json:"enabled"`
+	TUNName  string `json:"tun_name,omitempty"`
+	AllowLAN bool   `json:"allow_lan,omitempty"`
+}
+
+type KillSwitchStatus struct {
+	Active bool   `json:"active"`
+	Error  string `json:"error,omitempty"`
+}
+
 type Server struct {
-	sockPath string
-	engine   *core.Engine
-	srv      *http.Server
-	ln       net.Listener
-	mu       sync.Mutex
+	sockPath   string
+	engine     *core.Engine
+	killSwitch *platform.KillSwitchManager
+	srv        *http.Server
+	ln         net.Listener
+	mu         sync.Mutex
 }
 
 func NewServer(sockPath string, eng *core.Engine) *Server {
-	return &Server{sockPath: sockPath, engine: eng}
+	return &Server{
+		sockPath:   sockPath,
+		engine:     eng,
+		killSwitch: platform.NewKillSwitchManager(nil),
+	}
+}
+
+func (s *Server) SetKillSwitchManager(km *platform.KillSwitchManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.killSwitch = km
 }
 
 func (s *Server) Start() error {
@@ -73,6 +96,34 @@ func (s *Server) Start() error {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(StartResponse{OK: true, Warnings: res.Warnings})
+	})
+	mux.HandleFunc("/killswitch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(KillSwitchStatus{Active: s.killSwitch.Active()})
+			return
+		}
+		var req KillSwitchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(KillSwitchStatus{Error: "invalid killswitch request"})
+			return
+		}
+		var err error
+		if req.Enabled {
+			err = s.killSwitch.Enable(r.Context(), platform.KillSwitchOptions{
+				TUNName:     req.TUNName,
+				RoutingMark: platform.KillSwitchRoutingMark,
+				AllowLAN:    req.AllowLAN,
+			})
+		} else {
+			err = s.killSwitch.Disable(r.Context())
+		}
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(KillSwitchStatus{Active: s.killSwitch.Active(), Error: err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(KillSwitchStatus{Active: s.killSwitch.Active()})
 	})
 	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.engine.Stop(); err != nil {
@@ -173,6 +224,28 @@ func (c *Client) Stats(ctx context.Context) (*core.TrafficStats, error) {
 	var st core.TrafficStats
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
 		return nil, err
+	}
+	return &st, nil
+}
+
+func (c *Client) SetKillSwitch(ctx context.Context, req KillSwitchRequest) (*KillSwitchStatus, error) {
+	b, _ := json.Marshal(req)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/killswitch", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var st KillSwitchStatus
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return nil, err
+	}
+	if st.Error != "" {
+		return &st, errors.New(st.Error)
 	}
 	return &st, nil
 }

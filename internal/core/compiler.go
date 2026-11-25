@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/my-vpn/internal/platform"
 	"github.com/mumu-lhl/my-vpn/internal/routing"
 )
 
@@ -341,6 +342,9 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	routeBlock := routing.CompileRoute(cfg.Routing, cfg.DNS, cfg.Inbound.AllowLAN, finalTag, chainUDP, chainIPv6)
+	if cfg.Inbound.KillSwitch {
+		routeBlock["default_mark"] = platform.KillSwitchRoutingMark
+	}
 
 	doc := map[string]any{
 		"log": map[string]any{

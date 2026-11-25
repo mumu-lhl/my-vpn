@@ -10,6 +10,7 @@ import (
 
 	"github.com/mumu-lhl/my-vpn/internal/config"
 	"github.com/mumu-lhl/my-vpn/internal/core"
+	"github.com/mumu-lhl/my-vpn/internal/platform"
 )
 
 func TestUnixSocketIPCStartStopStatsAC10(t *testing.T) {
@@ -18,6 +19,7 @@ func TestUnixSocketIPCStartStopStatsAC10(t *testing.T) {
 	defer os.Remove(sock)
 	eng := core.NewEngine(dir)
 	srv := NewServer(sock, eng)
+	srv.SetKillSwitchManager(platform.NewKillSwitchManager(func(_ context.Context, _ string) error { return nil }))
 	if err := srv.Start(); err != nil {
 		t.Fatalf("ipc server start: %v", err)
 	}
@@ -36,6 +38,14 @@ func TestUnixSocketIPCStartStopStatsAC10(t *testing.T) {
 	st, err := cli.Stats(context.Background())
 	if err != nil || !st.Running {
 		t.Fatalf("expected running stats, err=%v st=%+v", err, st)
+	}
+	ksOn, err := cli.SetKillSwitch(context.Background(), KillSwitchRequest{Enabled: true, TUNName: "myvpn0", AllowLAN: true})
+	if err != nil || !ksOn.Active {
+		t.Fatalf("expected killswitch active via IPC, err=%v st=%+v", err, ksOn)
+	}
+	ksOff, err := cli.SetKillSwitch(context.Background(), KillSwitchRequest{Enabled: false})
+	if err != nil || ksOff.Active {
+		t.Fatalf("expected killswitch inactive via IPC, err=%v st=%+v", err, ksOff)
 	}
 	if err := cli.Stop(context.Background()); err != nil {
 		t.Fatalf("ipc stop failed: %v", err)

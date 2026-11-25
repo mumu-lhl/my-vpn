@@ -49,6 +49,7 @@ type InboundConfig struct {
 	TUNAddress  string      `json:"tun_address"`
 	AutoRoute   bool        `json:"auto_route"`
 	StrictRoute bool        `json:"strict_route"`
+	KillSwitch  bool        `json:"kill_switch"`
 }
 
 type HopRef struct {

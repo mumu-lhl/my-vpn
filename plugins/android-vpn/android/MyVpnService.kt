@@ -23,6 +23,7 @@ class MyVpnService : VpnService() {
         const val EXTRA_PER_APP_MODE = "per_app_mode"
         const val EXTRA_PER_APP_PACKAGES = "per_app_packages"
         const val EXTRA_ALLOW_LAN = "allow_lan"
+        const val EXTRA_KILL_SWITCH = "kill_switch"
         const val EXTRA_CHAIN_DESC = "chain_desc"
         private const val CHANNEL_ID = "myvpn_status_channel"
         private const val NOTIF_ID = 1001
@@ -52,17 +53,18 @@ class MyVpnService : VpnService() {
                 val pkgsRaw = intent.getStringExtra(EXTRA_PER_APP_PACKAGES) ?: ""
                 val packages = pkgsRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                 val allowLan = intent.getBooleanExtra(EXTRA_ALLOW_LAN, false)
+                val killSwitch = intent.getBooleanExtra(EXTRA_KILL_SWITCH, false)
 
                 ensureNotificationChannel()
                 startForeground(NOTIF_ID, buildNotification(currentChain, 0, 0))
-                establishTun(perAppMode, packages, allowLan)
+                establishTun(perAppMode, packages, allowLan, killSwitch)
                 registerNetworkMonitor()
             }
         }
         return START_STICKY
     }
 
-    private fun establishTun(perAppMode: String, packages: List<String>, allowLan: Boolean) {
+    private fun establishTun(perAppMode: String, packages: List<String>, allowLan: Boolean, killSwitch: Boolean) {
         tunInterface?.close()
         val builder = Builder()
             .setSession("MyVPN")
@@ -70,7 +72,15 @@ class MyVpnService : VpnService() {
             .addAddress("172.19.0.1", 30)
             .addDnsServer("172.19.0.2")
             .addRoute("0.0.0.0", 0)
+            .setBlocking(killSwitch)
 
+        if (killSwitch) {
+            // Capture IPv6 inside TUN so dropped tunnels cannot leak via direct IPv6.
+            builder.addAddress("fdfe:dcba:9876::1", 126)
+            builder.addRoute("::", 0)
+        }
+
+        // Exclude self package to prevent routing loops for Go core + libgeph5.so sidecar
         try {
             builder.addDisallowedApplication(packageName)
         } catch (_: Exception) {}
@@ -90,6 +100,7 @@ class MyVpnService : VpnService() {
             }
         }
 
+        // Allow LAN devices to reach the phone's 0.0.0.0 SOCKS5/HTTP proxy cleanly
         if (allowLan && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             builder.excludeRoute(android.net.IpPrefix(java.net.InetAddress.getByName("192.168.0.0"), 16))
             builder.excludeRoute(android.net.IpPrefix(java.net.InetAddress.getByName("10.0.0.0"), 8))

@@ -33,6 +33,7 @@
   let connected = $state(false);
   let inboundMode = $state<"proxy" | "tun">("proxy");
   let allowLAN = $state(false);
+  let killSwitch = $state(false);
   let socksPort = $state(10808);
   let httpPort = $state(10809);
   let upBytes = $state(0);
@@ -258,6 +259,10 @@
           <label class="flex items-center gap-2 text-sm">
             <input type="checkbox" bind:checked={allowLAN} />
             <span>允许局域网共享代理 (0.0.0.0)</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" bind:checked={killSwitch} />
+            <span>Kill Switch（断网保护：VPN 异常断开时阻断明文直连泄露）</span>
           </label>
         </div>
 

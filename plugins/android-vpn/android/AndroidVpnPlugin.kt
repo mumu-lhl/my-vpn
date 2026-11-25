@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.VpnService
 import android.os.Build
+import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -21,6 +22,7 @@ class AndroidVpnPlugin : MyGoPlugin {
                         putExtra(MyVpnService.EXTRA_PER_APP_MODE, args.optString("per_app_mode", "all"))
                         putExtra(MyVpnService.EXTRA_PER_APP_PACKAGES, args.optString("per_app_packages", ""))
                         putExtra(MyVpnService.EXTRA_ALLOW_LAN, args.optBoolean("allow_lan", false))
+                        putExtra(MyVpnService.EXTRA_KILL_SWITCH, args.optBoolean("kill_switch", false))
                         putExtra(MyVpnService.EXTRA_CHAIN_DESC, args.optString("chain_desc", "MyVPN"))
                     }
                     activity.startForegroundService(intent)
@@ -81,6 +83,14 @@ class AndroidVpnPlugin : MyGoPlugin {
                     )
                 }
                 reply.success(JSONObject().put("apps", arr))
+            }
+
+            "openVpnSettings" -> {
+                val intent = Intent(Settings.ACTION_VPN_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                PluginHost.activity.startActivity(intent)
+                reply.success(JSONObject().put("opened", true))
             }
 
             else -> reply.failure(PluginFailure("NoMethod", method))
