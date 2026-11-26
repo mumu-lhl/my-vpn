@@ -22,13 +22,25 @@ bun --cwd frontend test
 bun --cwd frontend run build
 ```
 
+## Nightly releases
+
+The [Release workflow](.github/workflows/release.yml) checks the default
+branch daily at 19:23 UTC (03:23 UTC+8). If the `nightly` tag already
+points at its tip, both builds are skipped. Otherwise the workflow builds
+Linux amd64 and signed Android arm64, replaces the assets on the single
+`nightly` prerelease, and moves the tag to the built commit. The release
+stays at `/releases/tag/nightly`. This requires a mutable release and
+permission to update the `nightly` tag. The existing `v*` tag builds still
+upload Actions artifacts separately.
+
 ## Android release signing
 
-The [Release workflow](.github/workflows/release.yml) runs on `v*` tags and
-uploads a signed arm64 APK and AAB as the `my-vpn-android-arm64` Actions
-artifact. Reuse the existing release key if you have already distributed a
-release APK. Otherwise, generate a key once and configure the repository's
-Actions secrets before pushing a tag:
+Both `v*` tag builds and nightly releases use the same Android signing key.
+The signed APK and AAB are uploaded as the `my-vpn-android-arm64` Actions
+artifact and are also attached to the nightly prerelease. Reuse the
+existing release key if you have already distributed a release APK.
+Otherwise, generate a key once and configure the repository's Actions
+secrets before running a release build:
 
 ```bash
 keytool -genkeypair -keystore looma-release.p12 -storetype PKCS12 \
