@@ -14,6 +14,9 @@ concurrency:
   group: release-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   cancel-in-progress: false
 
+env:
+  MYGO_COMMIT: 638d360992ae5e1f0f47779054977077fb6c20b0
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -65,19 +68,35 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Install Linux dependencies
+      - name: Install Linux & Rust musl dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
-      - name: Build Linux binaries
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev musl-tools
+          rustup target add x86_64-unknown-linux-musl
+      - name: Cache Cargo registry for geph5-client
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-geph5-linux-cargo
+      - name: Build geph5-client (Linux musl)
+        run: make build-geph5-linux
+      - name: Build Linux binaries and bundle with geph5-client
         run: |
           make build
-          mkdir -p dist
-          cp bin/looma dist/my-vpn-linux-amd64
-          cp bin/looma-helper dist/core-helper-linux-amd64
+          mkdir -p dist/bundle
+          cp bin/looma dist/bundle/looma
+          cp bin/looma-helper dist/bundle/looma-helper
+          cp bin/geph5-client dist/bundle/geph5-client
+          tar -C dist/bundle -czf dist/looma-linux-amd64.tar.gz looma looma-helper geph5-client
+          rm -rf dist/bundle
+          cp bin/looma dist/looma-linux-amd64
+          cp bin/looma-helper dist/looma-helper-linux-amd64
+          cp bin/geph5-client dist/geph5-client-linux-amd64
       - uses: actions/upload-artifact@v4
         with:
-          name: my-vpn-linux-amd64
+          name: looma-linux-amd64
           path: dist/
           if-no-files-found: error
 
@@ -99,6 +118,19 @@ jobs:
           bun-version: latest
       - name: Setup Android NDK
         uses: android-actions/setup-android@v3
+      - name: Setup Rust Android toolchain and cargo-ndk
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked
+      - name: Cache Cargo registry for geph5-client
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-geph5-android-cargo
+      - name: Build and stage geph5-client (Android arm64-v8a libgeph5.so)
+        run: make build-geph5-android
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -119,10 +151,15 @@ jobs:
           trap 'rm -f -- "$ANDROID_KEYSTORE_PATH"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
           unset ANDROID_KEYSTORE_BASE64
-          go run github.com/egoist/mygo/cmd/mygo@1b093d5131b0705c6b92e0a3315ea6d12eab32d3 build -platform android/arm64
+          go run "github.com/egoist/mygo/cmd/mygo@${MYGO_COMMIT}" build -platform android/arm64
+          apk=$(ls build/android/*.apk | head -n 1)
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libgeph5.so' || {
+            echo "::error::libgeph5.so missing from built APK: $apk"
+            exit 1
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: my-vpn-android-arm64
+          name: looma-android-arm64
           path: build/android/
           if-no-files-found: error
 
@@ -135,11 +172,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: my-vpn-linux-amd64
+          name: looma-linux-amd64
           path: dist/linux
       - uses: actions/download-artifact@v4
         with:
-          name: my-vpn-android-arm64
+          name: looma-android-arm64
           path: dist/android
       - name: Publish GitHub prerelease
         shell: bash
@@ -150,13 +187,19 @@ jobs:
         run: |
           mv -- dist/android/*.apk dist/looma-android-arm64.apk
           mv -- dist/android/*.aab dist/looma-android-arm64.aab
-          assets=(dist/linux/my-vpn-linux-amd64 dist/linux/core-helper-linux-amd64
-                  dist/looma-android-arm64.apk dist/looma-android-arm64.aab)
+          assets=(
+            dist/linux/looma-linux-amd64.tar.gz
+            dist/linux/looma-linux-amd64
+            dist/linux/looma-helper-linux-amd64
+            dist/linux/geph5-client-linux-amd64
+            dist/looma-android-arm64.apk
+            dist/looma-android-arm64.aab
+          )
           for asset in "${assets[@]}"; do
             test -s "$asset" || { echo "::error::Missing or empty nightly asset: $asset"; exit 1; }
           done
           title="Nightly $(date -u +%F) (${GITHUB_SHA:0:7})"
-          notes="Automated build of $GITHUB_SHA."
+          notes="Automated build of $GITHUB_SHA (includes bundled geph5-client on Linux and libgeph5.so in Android arm64)."
 
           if [[ "$NIGHTLY_EXISTS" == true ]]; then
             gh release upload nightly --clobber "${assets[@]}"
@@ -169,3 +212,40 @@ jobs:
           # Only advance the tag after the release assets and metadata are in place.
           gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" \
             -f "sha=$GITHUB_SHA" -F force=true --silent
+
+  publish-release:
+    needs: [prepare, build-linux, build-android]
+    if: startsWith(github.ref, 'refs/tags/v') && needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: looma-linux-amd64
+          path: dist/linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: looma-android-arm64
+          path: dist/android
+      - name: Publish GitHub release for tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          mv -- dist/android/*.apk "dist/looma-${TAG_NAME}-android-arm64.apk"
+          mv -- dist/android/*.aab "dist/looma-${TAG_NAME}-android-arm64.aab"
+          assets=(
+            dist/linux/looma-linux-amd64.tar.gz
+            dist/linux/looma-linux-amd64
+            dist/linux/looma-helper-linux-amd64
+            dist/linux/geph5-client-linux-amd64
+            "dist/looma-${TAG_NAME}-android-arm64.apk"
+            "dist/looma-${TAG_NAME}-android-arm64.aab"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset" || { echo "::error::Missing or empty release asset: $asset"; exit 1; }
+          done
+          gh release create "$TAG_NAME" --generate-notes "${assets[@]}"
