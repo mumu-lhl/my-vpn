@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/mumu-lhl/my-vpn/internal/core"
 	"github.com/mumu-lhl/my-vpn/internal/ipc"
@@ -30,5 +32,9 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
+	// Clean up nftables table on intentional graceful shutdown; unexpected crashes intentionally leave it active.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	_ = srv.DisableKillSwitch(ctx)
+	cancel()
 	_ = eng.Stop()
 }

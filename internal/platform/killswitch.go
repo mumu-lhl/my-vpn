@@ -18,10 +18,15 @@ type KillSwitchOptions struct {
 	TUNName     string
 	RoutingMark int
 	AllowLAN    bool
+	// BypassCgroupV2 exempts a cgroupv2 path (e.g., geph5-client sidecar scope)
+	// whose sockets cannot set the sing-box fwmark directly.
+	BypassCgroupV2 string
+	// BypassGID optionally exempts outbound sockets owned by a dedicated GID.
+	BypassGID int
 }
 
 // GenerateKillSwitchNFT returns an atomic nftables script that drops all outbound traffic
-// except loopback, the VPN TUN interface, core-marked sockets, DHCP, and optional LAN ranges.
+// except loopback, the VPN TUN interface, core-marked sockets, DHCP, optional sidecar exemptions, and optional LAN ranges.
 func GenerateKillSwitchNFT(opts KillSwitchOptions) string {
 	tun := strings.TrimSpace(opts.TUNName)
 	if tun == "" {
@@ -41,6 +46,13 @@ func GenerateKillSwitchNFT(opts KillSwitchOptions) string {
 	b.WriteString("    oifname \"lo\" accept\n")
 	fmt.Fprintf(&b, "    oifname %q accept\n", tun)
 	fmt.Fprintf(&b, "    meta mark 0x%x accept\n", mark)
+	if cg := strings.Trim(strings.TrimSpace(opts.BypassCgroupV2), "/"); cg != "" {
+		level := len(strings.Split(cg, "/"))
+		fmt.Fprintf(&b, "    socket cgroupv2 level %d %q accept\n", level, cg)
+	}
+	if opts.BypassGID > 0 {
+		fmt.Fprintf(&b, "    meta skgid %d accept\n", opts.BypassGID)
+	}
 	b.WriteString("    udp sport 68 udp dport 67 accept\n")
 	if opts.AllowLAN {
 		b.WriteString("    ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } accept\n")

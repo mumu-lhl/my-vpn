@@ -30,9 +30,11 @@ type StartResponse struct {
 }
 
 type KillSwitchRequest struct {
-	Enabled  bool   `json:"enabled"`
-	TUNName  string `json:"tun_name,omitempty"`
-	AllowLAN bool   `json:"allow_lan,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	TUNName        string `json:"tun_name,omitempty"`
+	AllowLAN       bool   `json:"allow_lan,omitempty"`
+	BypassCgroupV2 string `json:"bypass_cgroupv2,omitempty"`
+	BypassGID      int    `json:"bypass_gid,omitempty"`
 }
 
 type KillSwitchStatus struct {
@@ -61,6 +63,16 @@ func (s *Server) SetKillSwitchManager(km *platform.KillSwitchManager) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.killSwitch = km
+}
+
+func (s *Server) DisableKillSwitch(ctx context.Context) error {
+	s.mu.Lock()
+	km := s.killSwitch
+	s.mu.Unlock()
+	if km == nil {
+		return nil
+	}
+	return km.Disable(ctx)
 }
 
 func (s *Server) Start() error {
@@ -111,9 +123,11 @@ func (s *Server) Start() error {
 		var err error
 		if req.Enabled {
 			err = s.killSwitch.Enable(r.Context(), platform.KillSwitchOptions{
-				TUNName:     req.TUNName,
-				RoutingMark: platform.KillSwitchRoutingMark,
-				AllowLAN:    req.AllowLAN,
+				TUNName:        req.TUNName,
+				RoutingMark:    platform.KillSwitchRoutingMark,
+				AllowLAN:       req.AllowLAN,
+				BypassCgroupV2: req.BypassCgroupV2,
+				BypassGID:      req.BypassGID,
 			})
 		} else {
 			err = s.killSwitch.Disable(r.Context())
@@ -173,6 +187,22 @@ func NewClient(sockPath string) *Client {
 	}
 }
 
+func (c *Client) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/health", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health failed: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (c *Client) Start(ctx context.Context, cfg *config.AppConfig, tunFD int) (*StartResponse, error) {
 	b, _ := json.Marshal(StartRequest{Config: cfg, TunFD: tunFD})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/start", bytes.NewReader(b))
@@ -222,6 +252,23 @@ func (c *Client) Stats(ctx context.Context) (*core.TrafficStats, error) {
 	}
 	defer resp.Body.Close()
 	var st core.TrafficStats
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+func (c *Client) KillSwitchStatus(ctx context.Context) (*KillSwitchStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/killswitch", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var st KillSwitchStatus
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
 		return nil, err
 	}

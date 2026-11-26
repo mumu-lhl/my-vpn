@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
 
 type HopKind string
 
@@ -36,8 +40,17 @@ type AppConfig struct {
 	ExternalNodes []ExternalNode `json:"external_nodes"`
 	Routing       RoutingConfig  `json:"routing"`
 	DNS           DNSConfig      `json:"dns"`
+	Probe         ProbeConfig    `json:"probe"`
 	Linux         LinuxConfig    `json:"linux"`
 	Android       AndroidConfig  `json:"android"`
+}
+
+type ProbeConfig struct {
+	Mode          string `json:"mode"` // "builtin" or "custom"
+	TestURL       string `json:"test_url"`
+	CustomURL     string `json:"custom_url,omitempty"`
+	TimeoutMs     int    `json:"timeout_ms"`
+	Hop1ProbePort int    `json:"hop1_probe_port"`
 }
 
 type InboundConfig struct {
@@ -206,7 +219,7 @@ func DefaultConfig() *AppConfig {
 			SocksPort:   10808,
 			HTTPPort:    10809,
 			AllowLAN:    false,
-			TUNName:     "myvpn0",
+			TUNName:     "looma0",
 			TUNAddress:  "172.19.0.1/30",
 			AutoRoute:   true,
 			StrictRoute: true,
@@ -263,6 +276,12 @@ func DefaultConfig() *AppConfig {
 			BlockNonDirectIPv6WhenUnsupported: true,
 			RejectNonDirectUDPWhenTCPOnly:     true,
 		},
+		Probe: ProbeConfig{
+			Mode:          "builtin",
+			TestURL:       "http://connectivitycheck.gstatic.com/generate_204",
+			TimeoutMs:     5000,
+			Hop1ProbePort: 10810,
+		},
 		Linux: LinuxConfig{
 			SetSystemProxy: true,
 			MinimizeToTray: true,
@@ -271,6 +290,17 @@ func DefaultConfig() *AppConfig {
 			PerAppMode: PerAppAll,
 		},
 	}
+}
+
+// EffectiveProbeURL returns the active connectivity test URL according to Probe.Mode.
+func (c *AppConfig) EffectiveProbeURL() string {
+	if c.Probe.Mode == "custom" && strings.TrimSpace(c.Probe.CustomURL) != "" {
+		return strings.TrimSpace(c.Probe.CustomURL)
+	}
+	if strings.TrimSpace(c.Probe.TestURL) != "" {
+		return strings.TrimSpace(c.Probe.TestURL)
+	}
+	return "http://connectivitycheck.gstatic.com/generate_204"
 }
 
 func (c *AppConfig) Validate() error {
@@ -282,6 +312,16 @@ func (c *AppConfig) Validate() error {
 	}
 	if c.Inbound.SocksPort == c.Inbound.HTTPPort {
 		return fmt.Errorf("socks_port and http_port must differ")
+	}
+	for _, raw := range []string{c.Probe.TestURL, c.Probe.CustomURL} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("invalid probe URL: %s", raw)
+		}
 	}
 	return nil
 }

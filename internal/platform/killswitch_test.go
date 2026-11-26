@@ -8,9 +8,11 @@ import (
 
 func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 	script := GenerateKillSwitchNFT(KillSwitchOptions{
-		TUNName:     "myvpn0",
-		RoutingMark: KillSwitchRoutingMark,
-		AllowLAN:    true,
+		TUNName:        "myvpn0",
+		RoutingMark:    KillSwitchRoutingMark,
+		AllowLAN:       true,
+		BypassCgroupV2: "user.slice/user-1000.slice/myvpn-geph5.scope",
+		BypassGID:      987,
 	})
 	for _, want := range []string{
 		"table inet myvpn_killswitch",
@@ -18,6 +20,8 @@ func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 		`oifname "lo" accept`,
 		`oifname "myvpn0" accept`,
 		"meta mark 0x2026 accept",
+		`socket cgroupv2 level 3 "user.slice/user-1000.slice/myvpn-geph5.scope" accept`,
+		"meta skgid 987 accept",
 		"192.168.0.0/16",
 	} {
 		if !strings.Contains(script, want) {
@@ -28,6 +32,9 @@ func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 	noLAN := GenerateKillSwitchNFT(KillSwitchOptions{TUNName: "myvpn0", AllowLAN: false})
 	if strings.Contains(noLAN, "192.168.0.0/16") {
 		t.Fatalf("LAN subnet must not be allowed when AllowLAN=false")
+	}
+	if strings.Contains(noLAN, "cgroupv2") || strings.Contains(noLAN, "skgid") {
+		t.Fatalf("sidecar exemptions must not be emitted when unset:\n%s", noLAN)
 	}
 
 	var executed []string

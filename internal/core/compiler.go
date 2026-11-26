@@ -19,6 +19,7 @@ type CompileResult struct {
 	JSON             []byte           `json:"-"`
 	FinalOutboundTag string           `json:"final_outbound_tag"`
 	ChainSupportsUDP bool             `json:"chain_supports_udp"`
+	Hop1ProbePort    int              `json:"hop1_probe_port,omitempty"`
 	Warnings         []CompileWarning `json:"warnings,omitempty"`
 }
 
@@ -206,7 +207,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 			return nil, fmt.Errorf("build hop2: %w", err)
 		}
 		finalTag = "hop-2"
-		// If Hop 2 is WARP over MASQUE H2 (IP-in-HTTP/2), WARP itself carries UDP inside TCP H2.
+		// If Hop 2 is WARP over MASQUE H2 (IP-in-HTTP/2), WARP itself carries UDP inside TCP H2!
 		if forceH2 {
 			chainUDP = true
 		} else {
@@ -259,6 +260,22 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 			"listen_port": cfg.Inbound.HTTPPort,
 		},
 	}
+
+	hop1ProbePort := 0
+	if cfg.Chain.TwoHop {
+		hop1ProbePort = cfg.Probe.Hop1ProbePort
+		if hop1ProbePort <= 0 {
+			hop1ProbePort = 10810
+		}
+		// Loopback-only inbound routed directly to hop-1 so per-hop connectivity & IP probes can test Hop 1 independently.
+		inbounds = append(inbounds, map[string]any{
+			"type":        "socks",
+			"tag":         "hop1-probe-in",
+			"listen":      "127.0.0.1",
+			"listen_port": hop1ProbePort,
+		})
+	}
+
 	if cfg.Inbound.Mode == config.InboundTUN {
 		tunIn := map[string]any{
 			"type":           "tun",
@@ -302,7 +319,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	var dnsRules []map[string]any
-	// Prevent DNS bootstrap deadlock when geph5-client resolves broker/bridge hostnames in TUN mode.
+	// Prevent DNS bootstrap deadlock when geph5-client resolves broker/bridge hostnames in TUN mode
 	dnsRules = append(dnsRules, map[string]any{
 		"process_name": []string{"geph5-client", "libgeph5.so"},
 		"server":       "dns-direct",
@@ -342,6 +359,15 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	routeBlock := routing.CompileRoute(cfg.Routing, cfg.DNS, cfg.Inbound.AllowLAN, finalTag, chainUDP, chainIPv6)
+	if cfg.Chain.TwoHop {
+		if rules, ok := routeBlock["rules"].([]map[string]any); ok {
+			probeRule := map[string]any{
+				"inbound":  []string{"hop1-probe-in"},
+				"outbound": "hop-1",
+			}
+			routeBlock["rules"] = append([]map[string]any{probeRule}, rules...)
+		}
+	}
 	if cfg.Inbound.KillSwitch {
 		routeBlock["default_mark"] = platform.KillSwitchRoutingMark
 	}
@@ -370,6 +396,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 		JSON:             raw,
 		FinalOutboundTag: finalTag,
 		ChainSupportsUDP: chainUDP,
+		Hop1ProbePort:    hop1ProbePort,
 		Warnings:         warnings,
 	}, nil
 }

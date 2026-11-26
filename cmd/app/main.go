@@ -10,13 +10,13 @@ import (
 
 func main() {
 	app := mygo.App
-	app.SetName("MyVPN")
+	app.SetName("Looma")
 
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
 		dataDir = os.TempDir()
 	}
-	svc, err := NewAppService(filepath.Join(dataDir, "my-vpn"))
+	svc, err := NewAppService(filepath.Join(dataDir, "looma"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func main() {
 			return
 		}
 		mainWin = mygo.NewWindow(mygo.WindowOptions{
-			Title:     "MyVPN",
+			Title:     "Looma",
 			Width:     1040,
 			Height:    720,
 			MinWidth:  380,
