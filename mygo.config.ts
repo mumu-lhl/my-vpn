@@ -1,8 +1,8 @@
 import { defineConfig } from "mygo-cli";
 
 export default defineConfig({
-  name: "MyVPN",
-  identifier: "io.github.mumulhl.myvpn",
+  name: "Looma",
+  identifier: "io.github.mumulhl.looma",
   version: "0.1.0",
   devUrl: "http://localhost:5173",
   devCommand: "bun --cwd frontend run dev",

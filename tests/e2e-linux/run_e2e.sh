@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# L2 Linux E2E verification: spawns real compiled bin/looma-helper, drives Unix Socket IPC
+# start/stats/stop, verifies SOCKS5 & HTTP ports open and close cleanly.
+
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-HELPER_BIN="${ROOT_DIR}/bin/core-helper"
-SOCK="/tmp/myvpn-e2e-$$.sock"
+HELPER_BIN="${ROOT_DIR}/bin/looma-helper"
+SOCK="/tmp/looma-e2e-$$.sock"
 WORKDIR="$(mktemp -d)"
 
 cleanup() {
@@ -24,7 +27,7 @@ for _ in $(seq 1 30); do
   [ -S "${SOCK}" ] && break
   sleep 0.1
 done
-[ -S "${SOCK}" ] || { echo "core-helper socket did not appear" >&2; exit 1; }
+[ -S "${SOCK}" ] || { echo "looma-helper socket did not appear" >&2; exit 1; }
 
 echo "[E2E] Checking /health"
 curl -fsS --unix-socket "${SOCK}" http://unix/health | grep -q '"ok":true'
@@ -34,7 +37,7 @@ curl -fsS --unix-socket "${SOCK}" -X POST http://unix/start \
   -H 'Content-Type: application/json' \
   -d '{
     "config": {
-      "inbound": {"mode": "proxy", "socks_port": 18080, "http_port": 18081, "allow_lan": false, "tun_name": "myvpn0", "tun_address": "172.19.0.1/30", "auto_route": true, "strict_route": true},
+      "inbound": {"mode": "proxy", "socks_port": 18080, "http_port": 18081, "allow_lan": false, "tun_name": "looma0", "tun_address": "172.19.0.1/30", "auto_route": true, "strict_route": true},
       "chain": {"two_hop": true, "hop1": {"kind": "psiphon"}, "hop2": {"kind": "warp"}},
       "geph": {"exit_country": "auto", "local_socks_port": 19909, "control_port": 19910},
       "psiphon": {"egress_region": "auto", "establish_tunnel_timeout_sec": 30},
@@ -51,4 +54,4 @@ echo "[E2E] Stopping engine via IPC"
 curl -fsS --unix-socket "${SOCK}" -X POST http://unix/stop | grep -q '"ok":true'
 curl -fsS --unix-socket "${SOCK}" http://unix/stats | grep -q '"running":false'
 
-echo "[E2E] PASS: core-helper IPC lifecycle + WARP_AUTO_MASQUE_H2 verified"
+echo "[E2E] PASS: looma-helper IPC lifecycle + WARP_AUTO_MASQUE_H2 verified"

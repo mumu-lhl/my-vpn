@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# L3 Android 10+ (arm64-v8a) ADB verification script for AC-08, AC-09, AC-12, AC-21.
+# Usage: ./verify_android.sh [single|two-hop] [iterations]
+
 MODE="${1:-single}"
 ITERATIONS="${2:-10}"
-PKG="io.github.mumulhl.myvpn"
+PKG="io.github.mumulhl.looma"
 LIMIT_SEC=5
 if [ "${MODE}" = "two-hop" ]; then
   LIMIT_SEC=10
@@ -18,9 +21,9 @@ SDK="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
 echo "Device ABI=${ABI}, SDK=${SDK}"
 [ "${SDK}" -ge 29 ] || { echo "Android 10+ (API 29+) required" >&2; exit 1; }
 
-echo "[ADB] Checking foreground VPN service is running"
-adb shell dumpsys activity services "${PKG}" | grep -q "MyVpnService" || {
-  echo "MyVpnService is not active; start VPN on device first" >&2
+echo "[ADB] Checking foreground NetLinkService is running"
+adb shell dumpsys activity services "${PKG}" | grep -q "NetLinkService" || {
+  echo "NetLinkService is not active; start connection on device first" >&2
   exit 1
 }
 

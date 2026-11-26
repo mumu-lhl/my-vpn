@@ -5,10 +5,10 @@ BUN ?= bun
 GOPROXY ?= direct,https://proxy.golang.org
 
 build: build-helper
-	GOPROXY=$(GOPROXY) $(GO) build -o bin/my-vpn ./cmd/app
+	GOPROXY=$(GOPROXY) $(GO) build -o bin/looma ./cmd/app
 
 build-helper:
-	GOPROXY=$(GOPROXY) $(GO) build -o bin/core-helper ./cmd/core-helper
+	GOPROXY=$(GOPROXY) $(GO) build -o bin/looma-helper ./cmd/core-helper
 
 test: test-go test-frontend
 

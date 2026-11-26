@@ -9,21 +9,21 @@ import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 
-class AndroidVpnPlugin : MyGoPlugin {
+class AndroidNetPlugin : MyGoPlugin {
     override fun call(method: String, args: JSONObject, reply: PluginReply) {
         when (method) {
             "prepareAndStart" -> {
                 val activity = PluginHost.activity
                 val prepareIntent = VpnService.prepare(activity)
                 val startService = {
-                    val intent = Intent(activity, MyVpnService::class.java).apply {
-                        action = MyVpnService.ACTION_START
-                        putExtra(MyVpnService.EXTRA_CONFIG_JSON, args.optString("config_json", ""))
-                        putExtra(MyVpnService.EXTRA_PER_APP_MODE, args.optString("per_app_mode", "all"))
-                        putExtra(MyVpnService.EXTRA_PER_APP_PACKAGES, args.optString("per_app_packages", ""))
-                        putExtra(MyVpnService.EXTRA_ALLOW_LAN, args.optBoolean("allow_lan", false))
-                        putExtra(MyVpnService.EXTRA_KILL_SWITCH, args.optBoolean("kill_switch", false))
-                        putExtra(MyVpnService.EXTRA_CHAIN_DESC, args.optString("chain_desc", "MyVPN"))
+                    val intent = Intent(activity, NetLinkService::class.java).apply {
+                        action = NetLinkService.ACTION_START
+                        putExtra(NetLinkService.EXTRA_CONFIG_JSON, args.optString("config_json", ""))
+                        putExtra(NetLinkService.EXTRA_PER_APP_MODE, args.optString("per_app_mode", "all"))
+                        putExtra(NetLinkService.EXTRA_PER_APP_PACKAGES, args.optString("per_app_packages", ""))
+                        putExtra(NetLinkService.EXTRA_ALLOW_LAN, args.optBoolean("allow_lan", false))
+                        putExtra(NetLinkService.EXTRA_KILL_SWITCH, args.optBoolean("kill_switch", false))
+                        putExtra(NetLinkService.EXTRA_CHAIN_DESC, args.optString("chain_desc", "Looma"))
                     }
                     activity.startForegroundService(intent)
                     reply.success(JSONObject().put("started", true))
@@ -33,7 +33,7 @@ class AndroidVpnPlugin : MyGoPlugin {
                         if (resultCode == Activity.RESULT_OK) {
                             startService()
                         } else {
-                            reply.failure(PluginFailure("VpnDenied", "User denied VPN permission"))
+                            reply.failure(PluginFailure("PermissionDenied", "User denied network permission"))
                         }
                     }
                 } else {
@@ -43,8 +43,8 @@ class AndroidVpnPlugin : MyGoPlugin {
 
             "stop" -> {
                 val activity = PluginHost.activity
-                val intent = Intent(activity, MyVpnService::class.java).apply {
-                    action = MyVpnService.ACTION_STOP
+                val intent = Intent(activity, NetLinkService::class.java).apply {
+                    action = NetLinkService.ACTION_STOP
                 }
                 activity.startService(intent)
                 reply.success(JSONObject().put("stopped", true))
@@ -54,7 +54,7 @@ class AndroidVpnPlugin : MyGoPlugin {
                 val up = args.optLong("up_bps", 0L)
                 val down = args.optLong("down_bps", 0L)
                 val chain = args.optString("chain_desc", "Connected")
-                MyVpnService.updateNotificationStats(chain, up, down)
+                NetLinkService.updateNotificationStats(chain, up, down)
                 reply.success(null)
             }
 
