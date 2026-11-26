@@ -21,6 +21,9 @@ frontend/.svelte-kit/
 *.yaml.local
 .env
 .env.*
+*.jks
+*.keystore
+*.p12
 
 # Prebuilt sidecars
 third_party/geph5-build/out/

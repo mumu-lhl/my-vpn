@@ -21,3 +21,30 @@ bun --cwd frontend run lint
 bun --cwd frontend test
 bun --cwd frontend run build
 ```
+
+## Android release signing
+
+The [Release workflow](.github/workflows/release.yml) runs on `v*` tags and
+uploads a signed arm64 APK and AAB as the `my-vpn-android-arm64` Actions
+artifact. Reuse the existing release key if you have already distributed a
+release APK. Otherwise, generate a key once and configure the repository's
+Actions secrets before pushing a tag:
+
+```bash
+keytool -genkeypair -keystore looma-release.p12 -storetype PKCS12 \
+  -alias looma -keyalg RSA -keysize 3072 -validity 10000
+base64 -w0 looma-release.p12 | gh secret set ANDROID_KEYSTORE_BASE64
+gh secret set MYGO_ANDROID_KEYSTORE_PASSWORD
+```
+
+The workflow expects the alias `looma`, as set in `mygo.config.ts`. Set
+`MYGO_ANDROID_KEY_PASSWORD` as a separate Actions secret only if the key
+password differs from the keystore password. Keep a secure backup of the
+keystore and passwords outside GitHub; never commit them.
+
+Before distributing the APK, run `apksigner verify --print-certs <apk>` and
+compare the SHA-256 certificate fingerprint with your release key. For
+in-place upgrades, keep the package ID and signing key unchanged and bump
+the app version in `mygo.config.ts` (MyGo derives `versionCode` from it).
+If a debug-signed build with the same package ID is installed, Android
+requires uninstalling it first, which removes its local app data.

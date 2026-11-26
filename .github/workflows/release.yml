@@ -57,10 +57,21 @@ jobs:
         run: |
           bun install --frozen-lockfile || bun install
           bun run build
-      - name: Build Android arm64-v8a APK
+      - name: Build signed Android arm64-v8a APK and AAB
+        shell: bash
         env:
           GOPROXY: direct,https://proxy.golang.org
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          MYGO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.MYGO_ANDROID_KEYSTORE_PASSWORD }}
+          MYGO_ANDROID_KEY_PASSWORD: ${{ secrets.MYGO_ANDROID_KEY_PASSWORD }}
         run: |
+          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64 secret}"
+          : "${MYGO_ANDROID_KEYSTORE_PASSWORD:?Missing MYGO_ANDROID_KEYSTORE_PASSWORD secret}"
+          ANDROID_KEYSTORE_PATH=$(mktemp "$RUNNER_TEMP/looma-signing.XXXXXX")
+          export ANDROID_KEYSTORE_PATH
+          trap 'rm -f -- "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          unset ANDROID_KEYSTORE_BASE64
           go run github.com/egoist/mygo/cmd/mygo@1b093d5131b0705c6b92e0a3315ea6d12eab32d3 build -platform android/arm64
       - uses: actions/upload-artifact@v4
         with:
