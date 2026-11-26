@@ -7,7 +7,7 @@ import {
 } from "./probe";
 
 describe("probe helpers (AC-19, AC-20)", () => {
-  it("exposes Hiddify-style builtin connectivity test URLs", () => {
+  it("exposes builtin connectivity test URLs", () => {
     expect(BUILTIN_PROBE_URLS.length).toBeGreaterThanOrEqual(4);
     expect(BUILTIN_PROBE_URLS[0].url).toContain("generate_204");
   });

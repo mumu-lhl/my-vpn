@@ -21,11 +21,11 @@ type TestURLPreset struct {
 	URL   string `json:"url"`
 }
 
-// BuiltinTestURLs mirrors Hiddify's standard and censorship-resistant connectivity test endpoints.
+// BuiltinTestURLs defines standard and censorship-resistant connectivity test endpoints.
 var BuiltinTestURLs = []TestURLPreset{
 	{
 		ID:    "gstatic-204",
-		Label: "Google 204 (Hiddify 默认)",
+		Label: "Google 204（默认）",
 		URL:   "http://connectivitycheck.gstatic.com/generate_204",
 	},
 	{

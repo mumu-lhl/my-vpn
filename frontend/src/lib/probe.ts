@@ -1,3 +1,5 @@
+import type { ChainConfig, HopKind } from "./chain";
+
 export interface TestURLPreset {
   id: string;
   label: string;
@@ -39,7 +41,7 @@ export interface ChainProbeResult {
 export const BUILTIN_PROBE_URLS: TestURLPreset[] = [
   {
     id: "gstatic-204",
-    label: "Google 204 (Hiddify 默认)",
+    label: "Google 204（默认）",
     url: "http://connectivitycheck.gstatic.com/generate_204",
   },
   {
@@ -102,4 +104,40 @@ export function formatLatency(res: ConnectivityResult): string {
     return res.error ? `失败 (${res.error})` : "不可达";
   }
   return `${res.latency_ms} ms`;
+}
+
+export function buildPreviewProbeResult(
+  testURL: string,
+  chain: ChainConfig,
+): ChainProbeResult {
+  const mkHop = (
+    index: number,
+    kind: HopKind,
+    label: string,
+  ): HopProbeResult => ({
+    hop_index: index,
+    label,
+    kind,
+    connectivity: {
+      url: testURL,
+      reachable: false,
+      latency_ms: 0,
+      error: "未连接本地服务",
+    },
+    exit_ip: {
+      ip: "--",
+      country_code: "",
+      flag: countryCodeToFlag(""),
+      error: "连接后可获取出口信息",
+    },
+  });
+  return {
+    test_url: testURL,
+    hops: chain.two_hop
+      ? [
+          mkHop(1, chain.hop1.kind, `第一跳 · ${chain.hop1.kind}`),
+          mkHop(2, chain.hop2.kind, `第二跳 · ${chain.hop2.kind}`),
+        ]
+      : [mkHop(1, chain.hop1.kind, `当前出口 · ${chain.hop1.kind}`)],
+  };
 }
