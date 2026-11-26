@@ -104,6 +104,8 @@
   let probing = $state(false);
   let probeResult = $state<ChainProbeResult | null>(null);
 
+  let minimizeToTray = $state(true);
+  let setSystemProxy = $state(true);
   let perAppMode = $state<"all" | "whitelist" | "blacklist">("blacklist");
   let excludedPackages = $state<string[]>([]);
   let detectedPreview = $state<DetectedCNApp[]>([]);
@@ -176,6 +178,11 @@
         test_url: probeBuiltinURL,
         custom_url: probeCustomURL.trim(),
       },
+      linux: {
+        ...base.linux,
+        minimize_to_tray: minimizeToTray,
+        set_system_proxy: setSystemProxy,
+      },
       android: {
         ...base.android,
         per_app_mode: perAppMode,
@@ -235,6 +242,10 @@
       probeMode = cfg.probe.mode === "custom" ? "custom" : "builtin";
       probeBuiltinURL = cfg.probe.test_url || BUILTIN_PROBE_URLS[0].url;
       probeCustomURL = cfg.probe.custom_url ?? "";
+    }
+    if (cfg.linux) {
+      minimizeToTray = cfg.linux.minimize_to_tray ?? true;
+      setSystemProxy = cfg.linux.set_system_proxy ?? true;
     }
     if (cfg.android) {
       perAppMode = cfg.android.per_app_mode ?? "blacklist";
@@ -1239,10 +1250,31 @@
         </div>
 
         <h2 class="pt-2 text-lg font-semibold">平台与系统设置</h2>
-        <p class="text-sm text-slate-600 dark:text-slate-300">
-          Linux (niri / Wayland)：使用独立 looma-helper 一次性 setcap
-          提权，关闭窗口最小化至 SNI 托盘。
-        </p>
+        <div
+          class="space-y-2.5 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800"
+        >
+          <p class="text-xs font-medium text-slate-500 dark:text-slate-400">
+            Linux (niri / Wayland)
+          </p>
+          <label class="flex items-center justify-between gap-3 text-sm">
+            <span>关闭窗口时隐藏至 SNI 系统托盘（后台保持代理运行）</span>
+            <input
+              type="checkbox"
+              class="h-4 w-4 accent-sky-600"
+              bind:checked={minimizeToTray}
+              onchange={() => persistConfig(false)}
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 text-sm">
+            <span>代理模式下自动写入 GNOME / GTK 系统代理</span>
+            <input
+              type="checkbox"
+              class="h-4 w-4 accent-sky-600"
+              bind:checked={setSystemProxy}
+              onchange={() => persistConfig(false)}
+            />
+          </label>
+        </div>
         <p class="text-sm text-slate-600 dark:text-slate-300">
           Android 10+ (arm64-v8a ·
           io.github.mumulhl.looma)：支持分应用白/黑名单、局域网共享与前台速率通知栏。
