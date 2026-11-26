@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mumu-lhl/my-vpn/internal/config"
@@ -22,16 +23,17 @@ import (
 )
 
 type AppService struct {
-	mu          sync.Mutex
-	dataDir     string
-	store       *storage.Store
-	engine      *core.Engine
-	geph        *geph.Supervisor
-	prober      *probe.Prober
-	helperSock  string
-	helperCmd   *exec.Cmd
-	ipcClient   *ipc.Client
-	usingHelper bool
+	mu            sync.Mutex
+	dataDir       string
+	store         *storage.Store
+	engine        *core.Engine
+	geph          *geph.Supervisor
+	prober        *probe.Prober
+	helperSock    string
+	helperCmd     *exec.Cmd
+	ipcClient     *ipc.Client
+	usingHelper   bool
+	onStateChange func()
 }
 
 func NewAppService(dataDir string) (*AppService, error) {
@@ -44,10 +46,27 @@ func NewAppService(dataDir string) (*AppService, error) {
 		dataDir:    dataDir,
 		store:      st,
 		engine:     core.NewEngine(filepath.Join(dataDir, "runtime")),
-		geph:       geph.NewSupervisor(os.Getenv("MYVPN_GEPH5_BIN"), filepath.Join(dataDir, "geph")),
+		geph:       geph.NewSupervisor(geph.ResolveBinaryPath(""), filepath.Join(dataDir, "geph")),
 		prober:     probe.NewProber(),
 		helperSock: defaultSock,
 	}, nil
+}
+
+// SetOnStateChange registers a callback invoked after connection or config
+// changes so the desktop SNI tray stays synchronized with frontend actions.
+func (s *AppService) SetOnStateChange(fn func()) {
+	s.mu.Lock()
+	s.onStateChange = fn
+	s.mu.Unlock()
+}
+
+func (s *AppService) notifyStateChange() {
+	s.mu.Lock()
+	fn := s.onStateChange
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // SetHelperSocket overrides the core-helper Unix socket path (used for custom deployments and tests).
@@ -63,7 +82,97 @@ func (s *AppService) GetConfig() *config.AppConfig {
 }
 
 func (s *AppService) SaveConfig(cfg *config.AppConfig) error {
-	return s.store.Save(cfg)
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+	s.notifyStateChange()
+	return nil
+}
+
+// SwitchInboundMode updates the inbound mode (proxy or tun) and, if the proxy
+// is currently connected, reconnects cleanly to apply the new mode.
+func (s *AppService) SwitchInboundMode(ctx context.Context, mode config.InboundMode) error {
+	if mode != config.InboundProxy && mode != config.InboundTUN {
+		return fmt.Errorf("unsupported inbound mode: %s", mode)
+	}
+	cfg := s.store.Get()
+	if cfg.Inbound.Mode == mode {
+		return nil
+	}
+	wasRunning := s.GetStats().Running
+	cfg.Inbound.Mode = mode
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+	if wasRunning {
+		if err := s.Disconnect(); err != nil {
+			s.notifyStateChange()
+			return fmt.Errorf("disconnect before mode switch: %w", err)
+		}
+		if _, err := s.Connect(ctx); err != nil {
+			s.notifyStateChange()
+			return fmt.Errorf("reconnect in %s mode: %w", mode, err)
+		}
+		return nil
+	}
+	s.notifyStateChange()
+	return nil
+}
+
+// Shutdown disconnects any active tunnel, clears system proxy and Kill Switch,
+// and gracefully terminates a locally spawned looma-helper process.
+func (s *AppService) Shutdown() error {
+	firstErr := s.Disconnect()
+
+	s.mu.Lock()
+	cmd := s.helperCmd
+	s.helperCmd = nil
+	s.mu.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		done := make(chan struct{})
+		go func() {
+			_, _ = cmd.Process.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+		}
+	}
+	return firstErr
+}
+
+func resolveHelperBinary(cfg *config.AppConfig) string {
+	for _, candidate := range []string{
+		cfg.Linux.CoreHelperPath,
+		os.Getenv("LOOMA_HELPER_BIN"),
+		os.Getenv("MYVPN_CORE_HELPER_BIN"),
+	} {
+		if candidate != "" {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		dir := filepath.Dir(exe)
+		for _, name := range []string{"looma-helper", "core-helper"} {
+			p := filepath.Join(dir, name)
+			if info, err := os.Stat(p); err == nil && !info.IsDir() {
+				return p
+			}
+		}
+	}
+	for _, name := range []string{"looma-helper", "core-helper"} {
+		if found, err := exec.LookPath(name); err == nil && found != "" {
+			return found
+		}
+	}
+	return ""
 }
 
 func (s *AppService) ensureHelperClient(ctx context.Context, cfg *config.AppConfig) (*ipc.Client, error) {
@@ -73,12 +182,9 @@ func (s *AppService) ensureHelperClient(ctx context.Context, cfg *config.AppConf
 	if err := s.ipcClient.Health(ctx); err == nil {
 		return s.ipcClient, nil
 	}
-	helperBin := cfg.Linux.CoreHelperPath
+	helperBin := resolveHelperBinary(cfg)
 	if helperBin == "" {
-		helperBin = os.Getenv("MYVPN_CORE_HELPER_BIN")
-	}
-	if helperBin == "" {
-		return nil, fmt.Errorf("helper IPC not reachable at %s and core_helper_path not configured", s.helperSock)
+		return nil, fmt.Errorf("helper IPC not reachable at %s and looma-helper binary not found", s.helperSock)
 	}
 	ok, _, _ := platform.HasTUNCapabilities(helperBin)
 	if !ok {
@@ -103,12 +209,12 @@ func (s *AppService) ensureHelperClient(ctx context.Context, cfg *config.AppConf
 
 func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	cfg := s.store.Get()
 	usesGeph := cfg.Chain.Hop1.Kind == config.HopGeph || (cfg.Chain.TwoHop && cfg.Chain.Hop2.Kind == config.HopGeph)
-	if usesGeph && os.Getenv("MYVPN_GEPH5_BIN") != "" && cfg.Geph.Secret != "" {
+	if usesGeph && cfg.Geph.Secret != "" && s.geph.BinaryPath() != "" {
 		if err := s.geph.Start(ctx, cfg.Geph); err != nil {
+			s.mu.Unlock()
 			return nil, fmt.Errorf("start geph5 sidecar: %w", err)
 		}
 	}
@@ -118,11 +224,13 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 		cli, err := s.ensureHelperClient(ctx, cfg)
 		if err != nil {
 			_ = s.geph.Stop()
+			s.mu.Unlock()
 			return nil, err
 		}
 		startResp, err := cli.Start(ctx, cfg, 0)
 		if err != nil {
 			_ = s.geph.Stop()
+			s.mu.Unlock()
 			return nil, err
 		}
 		if cfg.Inbound.KillSwitch {
@@ -135,28 +243,33 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 			if _, err := cli.SetKillSwitch(ctx, ksReq); err != nil {
 				_ = cli.Stop(ctx)
 				_ = s.geph.Stop()
+				s.mu.Unlock()
 				return nil, fmt.Errorf("enable kill switch: %w", err)
 			}
 		}
 		s.usingHelper = true
+		s.mu.Unlock()
+		s.notifyStateChange()
 		return &core.CompileResult{Warnings: startResp.Warnings}, nil
 	}
 
 	res, err := s.engine.Start(ctx, cfg, 0)
 	if err != nil {
 		_ = s.geph.Stop()
+		s.mu.Unlock()
 		return nil, err
 	}
 	s.usingHelper = false
 	if runtime.GOOS == "linux" && cfg.Inbound.Mode == config.InboundProxy && cfg.Linux.SetSystemProxy {
 		_ = platform.SetGNOMESystemProxy(true, cfg.Inbound.HTTPPort, cfg.Inbound.SocksPort)
 	}
+	s.mu.Unlock()
+	s.notifyStateChange()
 	return res, nil
 }
 
 func (s *AppService) Disconnect() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	cfg := s.store.Get()
 	if runtime.GOOS == "linux" && cfg.Linux.SetSystemProxy {
@@ -176,26 +289,33 @@ func (s *AppService) Disconnect() error {
 	if err := s.engine.Stop(); err != nil && firstErr == nil {
 		firstErr = err
 	}
+	s.mu.Unlock()
+	s.notifyStateChange()
 	return firstErr
 }
 
 func (s *AppService) SetKillSwitch(ctx context.Context, enabled bool) (bool, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	cfg := s.store.Get()
 	cfg.Inbound.KillSwitch = enabled
 	if err := s.store.Save(cfg); err != nil {
+		s.mu.Unlock()
 		return false, err
 	}
 	if runtime.GOOS != "linux" {
+		s.mu.Unlock()
+		s.notifyStateChange()
 		return enabled, nil
 	}
 	if !s.usingHelper && !enabled {
+		s.mu.Unlock()
+		s.notifyStateChange()
 		return false, nil
 	}
 	cli, err := s.ensureHelperClient(ctx, cfg)
 	if err != nil {
+		s.mu.Unlock()
 		return false, err
 	}
 	st, err := cli.SetKillSwitch(ctx, ipc.KillSwitchRequest{
@@ -205,8 +325,11 @@ func (s *AppService) SetKillSwitch(ctx context.Context, enabled bool) (bool, err
 		BypassCgroupV2: os.Getenv("MYVPN_GEPH_CGROUPV2"),
 	})
 	if err != nil {
+		s.mu.Unlock()
 		return false, err
 	}
+	s.mu.Unlock()
+	s.notifyStateChange()
 	return st.Active, nil
 }
 

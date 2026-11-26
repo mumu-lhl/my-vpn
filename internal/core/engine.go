@@ -108,13 +108,14 @@ func (e *Engine) Start(ctx context.Context, cfg *config.AppConfig, tunFD int) (*
 	}
 
 	e.socksLn = socksLn
-	e.httpSrv = &http.Server{
+	httpSrv := &http.Server{
 		Handler: http.HandlerFunc(e.handleHTTP),
 	}
+	e.httpSrv = httpSrv
 	e.running = true
 
 	go e.acceptSocksLoop(socksLn)
-	go func() { _ = e.httpSrv.Serve(httpLn) }()
+	go func() { _ = httpSrv.Serve(httpLn) }()
 	return res, nil
 }
 

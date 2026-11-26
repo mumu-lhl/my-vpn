@@ -17,13 +17,20 @@ export interface ChainAnalysis {
   warning: string | null;
 }
 
-export function analyzeChain(chain: ChainConfig, hop1SupportsUDP = true): ChainAnalysis {
-  const hop1IsTcpOnly = chain.hop1.kind === "psiphon" || (chain.hop1.kind === "external" && !hop1SupportsUDP);
+export function analyzeChain(
+  chain: ChainConfig,
+  hop1SupportsUDP = true,
+): ChainAnalysis {
+  const hop1IsTcpOnly =
+    chain.hop1.kind === "psiphon" ||
+    (chain.hop1.kind === "external" && !hop1SupportsUDP);
   if (!chain.two_hop) {
     return {
       label: formatHop(chain.hop1),
       autoSwitchWarpMasqueH2: false,
-      warning: hop1IsTcpOnly ? "当前第一跳仅支持 TCP，非直连 UDP 流量将被拦截以防泄露。" : null,
+      warning: hop1IsTcpOnly
+        ? "当前第一跳仅支持 TCP，非直连 UDP 流量将被拦截以防泄露。"
+        : null,
     };
   }
   const autoSwitch = hop1IsTcpOnly && chain.hop2.kind === "warp";
