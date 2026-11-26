@@ -24,7 +24,9 @@ bun run --cwd frontend build
 ```
 
 Linux requires GTK 3 and WebKitGTK 4.1 at runtime. The GUI does not need a
-Vite server or the `frontend/dist` directory after building.
+Vite server or the `frontend/dist` directory after building. To smoke-test
+the built GUI without a desktop session, run `bash tests/e2e-linux/check_ui.sh`
+(requires Xvfb, xauth, xdotool, and ImageMagick).
 
 ## Nightly releases
 

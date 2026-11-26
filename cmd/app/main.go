@@ -30,6 +30,7 @@ func main() {
 		}
 		mainWin = mygo.NewWindow(mygo.WindowOptions{
 			Title:     "Looma",
+			URL:       "/",
 			Width:     1040,
 			Height:    720,
 			MinWidth:  380,
