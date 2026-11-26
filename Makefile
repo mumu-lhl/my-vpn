@@ -1,8 +1,9 @@
-.PHONY: build build-frontend build-helper test test-go test-frontend check-frontend lint-frontend fmt-frontend test-e2e clean
+.PHONY: build build-frontend build-helper build-geph5-linux build-geph5-android test test-go test-frontend check-frontend lint-frontend fmt-frontend test-e2e clean
 
 GO ?= go
 BUN ?= bun
 GOPROXY ?= direct,https://proxy.golang.org
+GEPH5_LINUX_TARGET ?= x86_64-unknown-linux-musl
 
 build: build-frontend build-helper
 	GOPROXY=$(GOPROXY) $(GO) build -tags looma_embed_frontend -o bin/looma ./cmd/app
@@ -12,6 +13,12 @@ build-frontend:
 
 build-helper:
 	GOPROXY=$(GOPROXY) $(GO) build -o bin/looma-helper ./cmd/core-helper
+
+build-geph5-linux:
+	bash third_party/geph5-build/build.sh linux $(GEPH5_LINUX_TARGET)
+
+build-geph5-android:
+	bash third_party/geph5-build/build.sh android
 
 test: test-go test-frontend
 

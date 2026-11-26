@@ -3,7 +3,7 @@ module github.com/mumu-lhl/my-vpn
 go 1.27.4
 
 require (
-	github.com/egoist/mygo v0.10.1-0.20261125163047-1b093d5131b0
+	github.com/egoist/mygo v0.10.1-0.20261126171813-638d360992ae
 	gopkg.in/yaml.v3 v3.0.1
 )
 

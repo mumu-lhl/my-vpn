@@ -10,6 +10,8 @@ export default {
   bindings: "frontend/src/lib/mygo.ts",
   out: "build",
   android: {
+    abis: ["arm64"],
+    extractNativeLibs: true,
     keystore: process.env.ANDROID_KEYSTORE_PATH,
     keyAlias: "looma",
     permissions: [

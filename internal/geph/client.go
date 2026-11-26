@@ -1,6 +1,7 @@
 package geph
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -23,6 +25,80 @@ type ExitLocation struct {
 	Country string  `json:"country"`
 	City    string  `json:"city"`
 	Load    float64 `json:"load,omitempty"`
+}
+
+// ResolveBinaryPath locates the bundled geph5-client executable across desktop
+// and Android deployments without requiring manual environment configuration.
+// Precedence: explicit path > LOOMA_GEPH5_BIN > MYVPN_GEPH5_BIN > executable
+// sibling > Android nativeLibraryDir (/proc/self/maps) > PATH.
+func ResolveBinaryPath(explicit string) string {
+	for _, candidate := range []string{
+		strings.TrimSpace(explicit),
+		strings.TrimSpace(os.Getenv("LOOMA_GEPH5_BIN")),
+		strings.TrimSpace(os.Getenv("MYVPN_GEPH5_BIN")),
+	} {
+		if candidate != "" && isExecutableFile(candidate) {
+			return candidate
+		}
+	}
+
+	names := []string{"geph5-client"}
+	if runtime.GOOS == "android" {
+		names = []string{"libgeph5.so", "geph5-client"}
+	}
+
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		dir := filepath.Dir(exe)
+		for _, name := range names {
+			if p := filepath.Join(dir, name); isExecutableFile(p) {
+				return p
+			}
+		}
+	}
+
+	if runtime.GOOS == "android" {
+		if libDir := androidNativeLibraryDir(); libDir != "" {
+			if p := filepath.Join(libDir, "libgeph5.so"); isExecutableFile(p) {
+				return p
+			}
+		}
+	}
+
+	if found, err := exec.LookPath("geph5-client"); err == nil && found != "" {
+		return found
+	}
+	return ""
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0o111 != 0
+}
+
+// androidNativeLibraryDir finds the app's extracted native library directory by
+// locating libmygoapp.so in /proc/self/maps.
+func androidNativeLibraryDir() string {
+	f, err := os.Open("/proc/self/maps")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		idx := strings.Index(line, "/")
+		if idx < 0 {
+			continue
+		}
+		p := strings.TrimSpace(line[idx:])
+		if strings.HasSuffix(p, "/libmygoapp.so") {
+			return filepath.Dir(p)
+		}
+	}
+	return ""
 }
 
 // GenerateYAML produces a valid geph5-client configuration YAML matching geph5-client Config struct.
@@ -86,6 +162,15 @@ func NewSupervisor(binaryPath, workDir string) *Supervisor {
 	}
 }
 
+func (s *Supervisor) BinaryPath() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.binaryPath != "" {
+		return s.binaryPath
+	}
+	return ResolveBinaryPath("")
+}
+
 func (s *Supervisor) Start(ctx context.Context, cfg config.GephConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -110,10 +195,14 @@ func (s *Supervisor) Start(ctx context.Context, cfg config.GephConfig) error {
 		ctrlPort = 19910
 	}
 	s.controlURL = fmt.Sprintf("http://127.0.0.1:%d", ctrlPort)
-	if s.binaryPath == "" {
-		return errors.New("geph5-client binary path not configured")
+	binPath := s.binaryPath
+	if binPath == "" {
+		binPath = ResolveBinaryPath("")
 	}
-	cmd := exec.CommandContext(ctx, s.binaryPath, "-c", cfgPath)
+	if binPath == "" {
+		return errors.New("geph5-client binary not found (set LOOMA_GEPH5_BIN or bundle geph5-client alongside looma)")
+	}
+	cmd := exec.CommandContext(ctx, binPath, "-c", cfgPath)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start geph5-client: %w", err)
 	}
