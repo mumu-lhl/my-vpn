@@ -59,30 +59,44 @@ class AndroidNetPlugin : MyGoPlugin {
             }
 
             "listInstalledApps" -> {
-                val pm = PluginHost.activity.packageManager
-                val apps = pm.getInstalledApplications(0)
-                val arr = JSONArray()
-                for (app in apps) {
-                    val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    val installer = try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            pm.getInstallSourceInfo(app.packageName).installingPackageName ?: ""
-                        } else {
-                            @Suppress("DEPRECATION")
-                            pm.getInstallerPackageName(app.packageName) ?: ""
+                val activity = PluginHost.activity
+                val selfPkg = activity.packageName
+                val pm = activity.packageManager
+                // Query PackageManager off the UI thread to keep the WebView responsive on devices with many apps.
+                Thread {
+                    try {
+                        val apps = pm.getInstalledApplications(0)
+                        val arr = JSONArray()
+                        for (app in apps) {
+                            if (app.packageName == selfPkg) continue
+                            val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                            val installer = try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    pm.getInstallSourceInfo(app.packageName).installingPackageName ?: ""
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    pm.getInstallerPackageName(app.packageName) ?: ""
+                                }
+                            } catch (_: Exception) {
+                                ""
+                            }
+                            arr.put(
+                                JSONObject()
+                                    .put("package_name", app.packageName)
+                                    .put("label", pm.getApplicationLabel(app).toString())
+                                    .put("is_system", isSystem)
+                                    .put("installer_package", installer)
+                            )
                         }
-                    } catch (_: Exception) {
-                        ""
+                        activity.runOnUiThread {
+                            reply.success(JSONObject().put("apps", arr))
+                        }
+                    } catch (e: Exception) {
+                        activity.runOnUiThread {
+                            reply.failure(PluginFailure("ListAppsFailed", e.message ?: "Failed to list installed apps"))
+                        }
                     }
-                    arr.put(
-                        JSONObject()
-                            .put("package_name", app.packageName)
-                            .put("label", pm.getApplicationLabel(app).toString())
-                            .put("is_system", isSystem)
-                            .put("installer_package", installer)
-                    )
-                }
-                reply.success(JSONObject().put("apps", arr))
+                }.start()
             }
 
             "openVpnSettings" -> {
