@@ -19,12 +19,6 @@ jobs:
           GOPROXY: direct,https://proxy.golang.org
         run: |
           go test -v -race ./...
-      - name: Build Linux binaries
-        env:
-          GOPROXY: direct,https://proxy.golang.org
-        run: |
-          go build -o bin/my-vpn ./cmd/app
-          go build -o bin/core-helper ./cmd/core-helper
 
   frontend-test:
     runs-on: ubuntu-latest
@@ -33,7 +27,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Install, fmt, check, lint, test, and build Svelte frontend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+      - name: Install, fmt, check, lint, and test Svelte frontend
         working-directory: frontend
         run: |
           bun install --frozen-lockfile || bun install
@@ -41,4 +38,5 @@ jobs:
           bun check
           bun run lint
           bun test
-          bun run build
+      - name: Build Linux binaries with the embedded frontend
+        run: make build

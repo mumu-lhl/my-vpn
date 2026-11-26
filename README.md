@@ -10,17 +10,21 @@ See [SPEC.md](./SPEC.md) for the complete technical architecture, milestones, an
 # Run Go unit & integration tests
 make test-go
 
-# Build Linux GUI & core-helper
+# Build Linux GUI (with embedded frontend) & core-helper
 make build
+./bin/looma
 
 # Frontend (Bun 1.4+ native test/check/fmt + oxlint)
 bun --cwd frontend install
 bun --cwd frontend fmt --check src
 bun --cwd frontend check
-bun --cwd frontend run lint
+bun run --cwd frontend lint
 bun --cwd frontend test
-bun --cwd frontend run build
+bun run --cwd frontend build
 ```
+
+Linux requires GTK 3 and WebKitGTK 4.1 at runtime. The GUI does not need a
+Vite server or the `frontend/dist` directory after building.
 
 ## Nightly releases
 

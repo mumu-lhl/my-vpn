@@ -1,11 +1,14 @@
-.PHONY: build build-helper test test-go test-frontend check-frontend lint-frontend fmt-frontend test-e2e clean
+.PHONY: build build-frontend build-helper test test-go test-frontend check-frontend lint-frontend fmt-frontend test-e2e clean
 
 GO ?= go
 BUN ?= bun
 GOPROXY ?= direct,https://proxy.golang.org
 
-build: build-helper
-	GOPROXY=$(GOPROXY) $(GO) build -o bin/looma ./cmd/app
+build: build-frontend build-helper
+	GOPROXY=$(GOPROXY) $(GO) build -tags looma_embed_frontend -o bin/looma ./cmd/app
+
+build-frontend:
+	cd frontend && $(BUN) install --frozen-lockfile && $(BUN) run build
 
 build-helper:
 	GOPROXY=$(GOPROXY) $(GO) build -o bin/looma-helper ./cmd/core-helper
@@ -22,7 +25,7 @@ check-frontend:
 	$(BUN) --cwd frontend check
 
 lint-frontend:
-	$(BUN) --cwd frontend run lint
+	$(BUN) run --cwd frontend lint
 
 fmt-frontend:
 	$(BUN) --cwd frontend fmt src
