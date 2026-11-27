@@ -255,7 +255,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 			"tls_fragment":        true,
 			"tls_record_fragment": cfg.Routing.DirectBypass.TLSRecordFragment,
 			"tls_tricks": map[string]any{
-				"mixedcase_sni":  true,
+				"mixedcase_sni":  cfg.Routing.DirectBypass.MixSNICase,
 				"fragment_size":  fragSize,
 				"fragment_sleep": fragSleep,
 			},
@@ -394,6 +394,16 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 				"outbound": "hop-1",
 			}
 			routeBlock["rules"] = append([]map[string]any{probeRule}, rules...)
+		}
+	}
+	if isServerlessBypass && cfg.Routing.DirectBypass.QUICMode == "block" {
+		if rules, ok := routeBlock["rules"].([]map[string]any); ok {
+			quicBlock := map[string]any{
+				"network": "udp",
+				"port":    []int{443},
+				"action":  "reject",
+			}
+			routeBlock["rules"] = append([]map[string]any{quicBlock}, rules...)
 		}
 	}
 	if cfg.Inbound.KillSwitch {

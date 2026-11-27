@@ -13,6 +13,7 @@ import (
 
 	"github.com/mumu-lhl/my-vpn/internal/config"
 	"github.com/mumu-lhl/my-vpn/internal/core"
+	"github.com/mumu-lhl/my-vpn/internal/dpi"
 	"github.com/mumu-lhl/my-vpn/internal/geph"
 	"github.com/mumu-lhl/my-vpn/internal/ipc"
 	"github.com/mumu-lhl/my-vpn/internal/platform"
@@ -409,4 +410,39 @@ func (s *AppService) GetClassicCNApps() []platform.ClassicCNApp {
 
 func (s *AppService) DetectCNApps(apps []platform.InstalledApp) []platform.DetectedCNApp {
 	return platform.DetectChinaApps(apps)
+}
+
+func (s *AppService) GetBypassPresets() []dpi.Strategy {
+	return dpi.BuiltinPresets()
+}
+
+func (s *AppService) GetBypassCapabilityStatus() dpi.CapabilityStatus {
+	cfg := s.store.Get()
+	_, status := dpi.ResolveEffectiveStrategy(cfg.Routing.DirectBypass, dpi.HasRawSocketCapability())
+	return status
+}
+
+func (s *AppService) AutoProbeBypass(ctx context.Context, domain string) *dpi.AutoProbeReport {
+	cfg := s.store.Get()
+	dialer := core.NewBypassDialerWithCache(cfg.Routing.DirectBypass, s.engine.DomainCache())
+	prober := dpi.NewAutoProber(dpi.AutoProberOptions{
+		Resolver: dialer.Resolver(),
+		Cache:    s.engine.DomainCache(),
+	})
+	return prober.Probe(ctx, domain)
+}
+
+func (s *AppService) GetDomainBypassCache() []dpi.DomainCacheEntry {
+	return s.engine.DomainCache().List()
+}
+
+func (s *AppService) LockDomainBypassStrategy(domain, strategyID string) error {
+	return s.engine.DomainCache().Lock(domain, strategyID)
+}
+
+func (s *AppService) ClearDomainBypassCache(domain string) error {
+	if domain == "" {
+		return s.engine.DomainCache().Clear()
+	}
+	return s.engine.DomainCache().Delete(domain)
 }

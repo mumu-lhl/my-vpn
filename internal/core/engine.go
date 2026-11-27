@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/my-vpn/internal/dpi"
 	"github.com/mumu-lhl/my-vpn/internal/routing"
 )
 
@@ -25,7 +26,8 @@ type TrafficStats struct {
 	UpBytes   int64  `json:"up_bytes"`
 	DownBytes int64  `json:"down_bytes"`
 	Mode      string `json:"mode"`
-	ChainDesc string `json:"chain_desc"`
+	ChainDesc        string               `json:"chain_desc"`
+	BypassCapability dpi.CapabilityStatus `json:"bypass_capability"`
 }
 
 // Engine manages the lifecycle of the local proxy / sing-box core.
@@ -44,6 +46,7 @@ type Engine struct {
 	httpSrv      *http.Server
 	upstreamAddr string // optional SOCKS5 upstream for loopback/sidecar chaining
 	bypassDialer *BypassDialer
+	domainCache  *dpi.DomainStrategyCache
 	customBypass bool
 	upBytes      atomic.Int64
 	downBytes    atomic.Int64
@@ -51,8 +54,9 @@ type Engine struct {
 
 func NewEngine(workDir string) *Engine {
 	return &Engine{
-		workDir:    workDir,
-		singboxBin: os.Getenv("MYVPN_SINGBOX_BIN"),
+		workDir:     workDir,
+		singboxBin:  os.Getenv("MYVPN_SINGBOX_BIN"),
+		domainCache: dpi.NewDomainStrategyCache(filepath.Join(workDir, "domain_bypass_cache.json")),
 	}
 }
 
@@ -93,7 +97,7 @@ func (e *Engine) Start(ctx context.Context, cfg *config.AppConfig, tunFD int) (*
 	e.cfg = cfg
 	e.compileRes = res
 	if !e.customBypass {
-		e.bypassDialer = NewBypassDialer(cfg.Routing.DirectBypass)
+		e.bypassDialer = NewBypassDialerWithCache(cfg.Routing.DirectBypass, e.domainCache)
 	}
 
 	if e.singboxBin != "" {
@@ -176,12 +180,17 @@ func (e *Engine) Stats() TrafficStats {
 			desc = string(e.cfg.Chain.Hop1.Kind)
 		}
 	}
+	var capStatus dpi.CapabilityStatus
+	if e.bypassDialer != nil {
+		capStatus = e.bypassDialer.CapabilityStatus()
+	}
 	return TrafficStats{
-		Running:   e.running,
-		UpBytes:   e.upBytes.Load(),
-		DownBytes: e.downBytes.Load(),
-		Mode:      mode,
-		ChainDesc: desc,
+		Running:          e.running,
+		UpBytes:          e.upBytes.Load(),
+		DownBytes:        e.downBytes.Load(),
+		Mode:             mode,
+		ChainDesc:        desc,
+		BypassCapability: capStatus,
 	}
 }
 
@@ -255,7 +264,14 @@ func (e *Engine) handleSocks5(c net.Conn) {
 	_, _ = c.Write([]byte{0x05, 0x00})
 
 	hdr := make([]byte, 4)
-	if _, err := io.ReadFull(br, hdr); err != nil || hdr[1] != 0x01 {
+	if _, err := io.ReadFull(br, hdr); err != nil {
+		return
+	}
+	if hdr[1] == 0x03 {
+		e.handleSocks5UDPAssociate(c, br, hdr[3])
+		return
+	}
+	if hdr[1] != 0x01 {
 		_, _ = c.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		return
 	}
@@ -409,4 +425,117 @@ func dialViaSocks5(proxyAddr, targetHost string, targetPort int) (net.Conn, erro
 		return nil, errors.New("socks5 connect failed")
 	}
 	return c, nil
+}
+
+func (e *Engine) DomainCache() *dpi.DomainStrategyCache {
+	return e.domainCache
+}
+
+func (e *Engine) handleSocks5UDPAssociate(ctrl net.Conn, br *bufio.Reader, atyp byte) {
+	// Drain client DST.ADDR + DST.PORT from UDP ASSOCIATE request.
+	switch atyp {
+	case 0x01:
+		_, _ = io.CopyN(io.Discard, br, 6)
+	case 0x03:
+		l, err := br.ReadByte()
+		if err != nil {
+			return
+		}
+		_, _ = io.CopyN(io.Discard, br, int64(l)+2)
+	case 0x04:
+		_, _ = io.CopyN(io.Discard, br, 18)
+	default:
+		return
+	}
+
+	udpLn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		_, _ = ctrl.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	defer udpLn.Close()
+
+	udpAddr := udpLn.LocalAddr().(*net.UDPAddr)
+	reply := []byte{0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, byte(udpAddr.Port >> 8), byte(udpAddr.Port)}
+	if _, err := ctrl.Write(reply); err != nil {
+		return
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, br)
+		close(done)
+		_ = udpLn.Close()
+	}()
+
+	e.mu.Lock()
+	cfg := e.cfg
+	e.mu.Unlock()
+	quicMode := "fake"
+	if cfg != nil && cfg.Routing.DirectBypass.QUICMode != "" {
+		quicMode = cfg.Routing.DirectBypass.QUICMode
+	}
+
+	buf := make([]byte, 65535)
+	for {
+		n, clientAddr, err := udpLn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		if n < 10 || buf[2] != 0x00 {
+			continue
+		}
+		var dstHost string
+		off := 4
+		switch buf[3] {
+		case 0x01:
+			if n < off+6 {
+				continue
+			}
+			dstHost = net.IP(buf[off : off+4]).String()
+			off += 4
+		case 0x03:
+			if n < off+1 {
+				continue
+			}
+			l := int(buf[off])
+			off++
+			if n < off+l+2 {
+				continue
+			}
+			dstHost = string(buf[off : off+l])
+			off += l
+		default:
+			continue
+		}
+		dstPort := int(binary.BigEndian.Uint16(buf[off : off+2]))
+		off += 2
+		payload := buf[off:n]
+
+		dstAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort)))
+		if err != nil {
+			continue
+		}
+		outConn, err := net.ListenPacket("udp", ":0")
+		if err != nil {
+			continue
+		}
+		dropped, err := dpi.DesyncQUICPacket(outConn, dstAddr, payload, quicMode)
+		if err != nil || dropped {
+			_ = outConn.Close()
+			continue
+		}
+		e.upBytes.Add(int64(len(payload)))
+		go func(oc net.PacketConn, ca net.Addr, hdrCopy []byte) {
+			defer oc.Close()
+			_ = oc.SetReadDeadline(time.Now().Add(5 * time.Second))
+			rbuf := make([]byte, 65535)
+			rn, _, rerr := oc.ReadFrom(rbuf)
+			if rerr == nil && rn > 0 {
+				resp := append(hdrCopy, rbuf[:rn]...)
+				_, _ = udpLn.WriteTo(resp, ca)
+				e.downBytes.Add(int64(rn))
+			}
+		}(outConn, clientAddr, append([]byte(nil), buf[:off]...))
+	}
 }

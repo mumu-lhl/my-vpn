@@ -3,6 +3,7 @@ import type { ExternalNode } from "./mygo";
 import { BUILTIN_PROBE_URLS } from "./probe";
 
 export type DirectBypassScope = "global" | "list";
+export type QUICBypassMode = "fake" | "block" | "pass";
 
 export interface AppFormState {
   inboundMode: "proxy" | "tun";
@@ -23,10 +24,24 @@ export interface AppFormState {
   blockAds: boolean;
   directBypass: boolean;
   directBypassScope: DirectBypassScope;
+  directBypassPresetID: string;
+  directBypassSplitAtSNI: boolean;
+  directBypassMixSNICase: boolean;
+  directBypassSplitCount: number;
   directBypassFragmentSize: string;
   directBypassFragmentSleep: string;
   directBypassRecordFragment: boolean;
+  directBypassEnableDisorder: boolean;
+  directBypassEnableOOB: boolean;
+  directBypassEnableFakeTTL: boolean;
+  directBypassFakeTTL: number;
+  directBypassEnableRawFake: boolean;
+  directBypassRawBadSum: boolean;
+  directBypassRawBadSeq: boolean;
   directBypassHttpMixHostCase: boolean;
+  directBypassQUICMode: QUICBypassMode;
+  directBypassEnableECH: boolean;
+  directBypassAutoLearn: boolean;
   directBypassDoHURL: string;
   directBypassDoHStaticIPs: string;
   directBypassDoHDisableSNI: boolean;
@@ -67,10 +82,24 @@ export function createDefaultFormState(): AppFormState {
     blockAds: true,
     directBypass: true,
     directBypassScope: "global",
+    directBypassPresetID: "disorder_oob",
+    directBypassSplitAtSNI: true,
+    directBypassMixSNICase: true,
+    directBypassSplitCount: 3,
     directBypassFragmentSize: "10-30",
     directBypassFragmentSleep: "2-8ms",
     directBypassRecordFragment: true,
+    directBypassEnableDisorder: true,
+    directBypassEnableOOB: true,
+    directBypassEnableFakeTTL: false,
+    directBypassFakeTTL: 4,
+    directBypassEnableRawFake: false,
+    directBypassRawBadSum: true,
+    directBypassRawBadSeq: true,
     directBypassHttpMixHostCase: true,
+    directBypassQUICMode: "fake",
+    directBypassEnableECH: true,
+    directBypassAutoLearn: true,
     directBypassDoHURL: "",
     directBypassDoHStaticIPs: "",
     directBypassDoHDisableSNI: true,
@@ -145,10 +174,27 @@ export function hydrateFormState(
     const db = cfg.routing.direct_bypass;
     next.directBypass = Boolean(db?.enable_default_preset ?? true);
     next.directBypassScope = db?.scope === "list" ? "list" : "global";
+    next.directBypassPresetID = db?.preset_id || "disorder_oob";
+    next.directBypassSplitAtSNI = Boolean(db?.split_at_sni ?? true);
+    next.directBypassMixSNICase = Boolean(db?.mix_sni_case ?? true);
+    next.directBypassSplitCount = Number(db?.split_count ?? 3) || 3;
     next.directBypassFragmentSize = db?.tls_fragment_size || "10-30";
     next.directBypassFragmentSleep = db?.tls_fragment_sleep || "2-8ms";
     next.directBypassRecordFragment = Boolean(db?.tls_record_fragment ?? true);
+    next.directBypassEnableDisorder = Boolean(db?.enable_disorder ?? true);
+    next.directBypassEnableOOB = Boolean(db?.enable_oob ?? true);
+    next.directBypassEnableFakeTTL = Boolean(db?.enable_fake_ttl ?? false);
+    next.directBypassFakeTTL = Number(db?.fake_ttl ?? 4) || 4;
+    next.directBypassEnableRawFake = Boolean(db?.enable_raw_fake ?? false);
+    next.directBypassRawBadSum = Boolean(db?.raw_bad_sum ?? true);
+    next.directBypassRawBadSeq = Boolean(db?.raw_bad_seq ?? true);
     next.directBypassHttpMixHostCase = Boolean(db?.http_mix_host_case ?? true);
+    next.directBypassQUICMode =
+      db?.quic_mode === "block" || db?.quic_mode === "pass"
+        ? db.quic_mode
+        : "fake";
+    next.directBypassEnableECH = Boolean(db?.enable_ech ?? true);
+    next.directBypassAutoLearn = Boolean(db?.auto_learn_per_domain ?? true);
     next.directBypassDoHURL = db?.doh_url ?? "";
     next.directBypassDoHStaticIPs = Array.isArray(db?.doh_static_ips)
       ? db.doh_static_ips.join(", ")
@@ -234,10 +280,24 @@ export function buildConfigPayload(
         ...base.routing?.direct_bypass,
         enable_default_preset: form.directBypass,
         scope: form.directBypassScope,
+        preset_id: form.directBypassPresetID,
+        split_at_sni: form.directBypassSplitAtSNI,
+        mix_sni_case: form.directBypassMixSNICase,
+        split_count: Number(form.directBypassSplitCount) || 3,
         tls_fragment_size: form.directBypassFragmentSize.trim() || "10-30",
         tls_fragment_sleep: form.directBypassFragmentSleep.trim() || "2-8ms",
         tls_record_fragment: form.directBypassRecordFragment,
+        enable_disorder: form.directBypassEnableDisorder,
+        enable_oob: form.directBypassEnableOOB,
+        enable_fake_ttl: form.directBypassEnableFakeTTL,
+        fake_ttl: Number(form.directBypassFakeTTL) || 4,
+        enable_raw_fake: form.directBypassEnableRawFake,
+        raw_bad_sum: form.directBypassRawBadSum,
+        raw_bad_seq: form.directBypassRawBadSeq,
         http_mix_host_case: form.directBypassHttpMixHostCase,
+        quic_mode: form.directBypassQUICMode,
+        enable_ech: form.directBypassEnableECH,
+        auto_learn_per_domain: form.directBypassAutoLearn,
         doh_url: form.directBypassDoHURL.trim(),
         doh_static_ips: dohStaticIPs,
         doh_disable_sni: form.directBypassDoHDisableSNI,

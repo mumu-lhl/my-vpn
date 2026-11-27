@@ -10,12 +10,68 @@ declare global {
   }
 }
 
+export interface BypassCapabilityStatus {
+  os: string;
+  raw_cap_available: boolean;
+  degraded: boolean;
+  notice?: string;
+}
+
+export interface BypassStrategy {
+  id: string;
+  name: string;
+  description: string;
+  methods: string[];
+  split_at_sni: boolean;
+  mix_sni_case: boolean;
+  split_count: number;
+  fragment_size: string;
+  fragment_sleep: string;
+  ttl: number;
+  http_mix_host_case: boolean;
+  quic_mode: string;
+  requires_raw: boolean;
+}
+
+export interface StrategyProbeResult {
+  strategy_id: string;
+  strategy_name: string;
+  success: boolean;
+  latency_ms: number;
+  used_ech: boolean;
+  error?: string;
+}
+
+export interface AutoProbeReport {
+  domain: string;
+  resolved_ips?: string[];
+  ech_available: boolean;
+  ech_handshake_ok: boolean;
+  recommended_id?: string;
+  recommended_name?: string;
+  best_latency_ms?: number;
+  capability: BypassCapabilityStatus;
+  results: StrategyProbeResult[];
+  error?: string;
+}
+
+export interface DomainCacheEntry {
+  domain: string;
+  strategy_id: string;
+  latency_ms: number;
+  ech_supported: boolean;
+  failure_count: number;
+  locked: boolean;
+  updated_at_unix: number;
+}
+
 export interface TrafficStats {
   running: boolean;
   up_bytes: number;
   down_bytes: number;
   mode: string;
   chain_desc: string;
+  bypass_capability?: BypassCapabilityStatus;
 }
 
 export interface LANInfo {
@@ -87,6 +143,18 @@ export const AppService = {
   GetClassicCNApps: () => callGo<ClassicCNApp[]>("AppService.GetClassicCNApps"),
   DetectCNApps: (apps: InstalledApp[]) =>
     callGo<DetectedCNApp[]>("AppService.DetectCNApps", apps),
+  GetBypassPresets: () =>
+    callGo<BypassStrategy[]>("AppService.GetBypassPresets"),
+  GetBypassCapabilityStatus: () =>
+    callGo<BypassCapabilityStatus>("AppService.GetBypassCapabilityStatus"),
+  AutoProbeBypass: (domain: string) =>
+    callGo<AutoProbeReport>("AppService.AutoProbeBypass", domain),
+  GetDomainBypassCache: () =>
+    callGo<DomainCacheEntry[]>("AppService.GetDomainBypassCache"),
+  LockDomainBypassStrategy: (domain: string, strategyId: string) =>
+    callGo<void>("AppService.LockDomainBypassStrategy", domain, strategyId),
+  ClearDomainBypassCache: (domain: string) =>
+    callGo<void>("AppService.ClearDomainBypassCache", domain),
 };
 
 export const AndroidNetPlugin = {
