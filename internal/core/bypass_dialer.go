@@ -118,7 +118,8 @@ func (d *BypassDialer) strategyForHost(host string) dpi.Strategy {
 }
 
 // Dial resolves host via static-IP DoH (unless host is already an IP literal),
-// opens a TCP connection with TCP_NODELAY, and wraps it with dpi.DesyncConn.
+// opens a TCP connection with TCP_NODELAY (capturing live TCP seq/ack when CAP_NET_RAW
+// raw fake injection is active), and wraps it with dpi.DesyncConn.
 func (d *BypassDialer) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
 	var targets []string
 	if addr, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
@@ -134,10 +135,24 @@ func (d *BypassDialer) Dial(ctx context.Context, host string, port int) (net.Con
 	}
 
 	strat := d.strategyForHost(host)
+	captureSeq := d.capability.RawCapAvailable &&
+		(strat.HasMethod(dpi.MethodRawBadSum) || strat.HasMethod(dpi.MethodRawBadSeq) || strat.HasMethod(dpi.MethodFakeTTL))
+
 	var lastErr error
 	portStr := strconv.Itoa(port)
 	for _, target := range targets {
-		conn, err := d.dialTCP(ctx, net.JoinHostPort(target, portStr))
+		var (
+			conn   net.Conn
+			seq    uint32
+			ack    uint32
+			hasSeq bool
+			err    error
+		)
+		if captureSeq {
+			conn, seq, ack, hasSeq, err = dpi.DialAndCaptureTCPSeq(ctx, target, port, d.dialTCP)
+		} else {
+			conn, err = d.dialTCP(ctx, net.JoinHostPort(target, portStr))
+		}
 		if err != nil {
 			lastErr = err
 			continue
@@ -145,7 +160,11 @@ func (d *BypassDialer) Dial(ctx context.Context, host string, port int) (net.Con
 		if tc, ok := conn.(*net.TCPConn); ok {
 			_ = tc.SetNoDelay(true)
 		}
-		return dpi.NewDesyncConn(conn, strat, d.hooks), nil
+		dc := dpi.NewDesyncConn(conn, strat, d.hooks)
+		if hasSeq {
+			dc.SetInitialTCPSeq(seq, ack)
+		}
+		return dc, nil
 	}
 	if d.cache != nil && d.cfg.AutoLearnPerDomain {
 		_, _ = d.cache.RecordFailure(host)
@@ -167,6 +186,9 @@ func newBypassConn(c net.Conn, cfg config.DirectBypassConfig, sleepFn func(time.
 	}
 	if !cfg.EnableOOB {
 		strat.Methods = removeMethod(strat.Methods, dpi.MethodOOB)
+	}
+	if !cfg.EnableFakeTTL {
+		strat.Methods = removeMethod(strat.Methods, dpi.MethodFakeTTL)
 	}
 	return dpi.NewDesyncConn(c, strat, dpi.DesyncHooks{SleepFn: sleepFn})
 }

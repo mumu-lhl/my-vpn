@@ -138,3 +138,30 @@ func freePort(t *testing.T) int {
 	defer ln.Close()
 	return ln.Addr().(*net.TCPAddr).Port
 }
+
+func TestCompileSingBoxDirectBypassSocksBridge(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Chain.Hop1 = config.HopRef{Kind: config.HopDirectBypass}
+	cfg.Chain.TwoHop = false
+
+	res, err := CompileSingBoxConfigWithOptions(cfg, 0, CompileOptions{BypassSocksPort: 19999})
+	if err != nil {
+		t.Fatalf("CompileSingBoxConfigWithOptions failed: %v", err)
+	}
+	outbounds, ok := res.Config["outbounds"].([]map[string]any)
+	if !ok {
+		t.Fatalf("expected outbounds slice")
+	}
+	var found bool
+	for _, ob := range outbounds {
+		if ob["tag"] == "direct-bypass" {
+			found = true
+			if ob["type"] != "socks" || ob["server"] != "127.0.0.1" || ob["server_port"] != 19999 {
+				t.Fatalf("expected direct-bypass bridged to socks 127.0.0.1:19999, got %+v", ob)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("direct-bypass outbound not found")
+	}
+}

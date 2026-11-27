@@ -220,38 +220,52 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 		}
 	}
 
-	needsHelper := runtime.GOOS == "linux" && (cfg.Inbound.Mode == config.InboundTUN || cfg.Inbound.KillSwitch)
-	if needsHelper {
+	mandatoryHelper := runtime.GOOS == "linux" && (cfg.Inbound.Mode == config.InboundTUN || cfg.Inbound.KillSwitch)
+	wantsRawFakeHelper := runtime.GOOS == "linux" &&
+		cfg.Chain.Hop1.Kind == config.HopDirectBypass &&
+		(cfg.Routing.DirectBypass.EnableRawFake || cfg.Routing.DirectBypass.PresetID == dpi.PresetRawFakeMultidisorder)
+
+	if mandatoryHelper || wantsRawFakeHelper {
 		cli, err := s.ensureHelperClient(ctx, cfg)
 		if err != nil {
-			_ = s.geph.Stop()
-			s.mu.Unlock()
-			return nil, err
-		}
-		startResp, err := cli.Start(ctx, cfg, 0)
-		if err != nil {
-			_ = s.geph.Stop()
-			s.mu.Unlock()
-			return nil, err
-		}
-		if cfg.Inbound.KillSwitch {
-			ksReq := ipc.KillSwitchRequest{
-				Enabled:        true,
-				TUNName:        cfg.Inbound.TUNName,
-				AllowLAN:       cfg.Inbound.AllowLAN,
-				BypassCgroupV2: os.Getenv("MYVPN_GEPH_CGROUPV2"),
-			}
-			if _, err := cli.SetKillSwitch(ctx, ksReq); err != nil {
-				_ = cli.Stop(ctx)
+			if mandatoryHelper {
 				_ = s.geph.Stop()
 				s.mu.Unlock()
-				return nil, fmt.Errorf("enable kill switch: %w", err)
+				return nil, err
+			}
+			// Best-effort Raw Fake helper unavailable in proxy mode: gracefully fall back to rootless userspace engine.
+		} else {
+			startResp, err := cli.Start(ctx, cfg, 0)
+			if err != nil {
+				if mandatoryHelper {
+					_ = s.geph.Stop()
+					s.mu.Unlock()
+					return nil, err
+				}
+			} else {
+				if cfg.Inbound.KillSwitch {
+					ksReq := ipc.KillSwitchRequest{
+						Enabled:        true,
+						TUNName:        cfg.Inbound.TUNName,
+						AllowLAN:       cfg.Inbound.AllowLAN,
+						BypassCgroupV2: os.Getenv("MYVPN_GEPH_CGROUPV2"),
+					}
+					if _, err := cli.SetKillSwitch(ctx, ksReq); err != nil {
+						_ = cli.Stop(ctx)
+						_ = s.geph.Stop()
+						s.mu.Unlock()
+						return nil, fmt.Errorf("enable kill switch: %w", err)
+					}
+				}
+				s.usingHelper = true
+				if runtime.GOOS == "linux" && cfg.Inbound.Mode == config.InboundProxy && cfg.Linux.SetSystemProxy {
+					_ = platform.SetGNOMESystemProxy(true, cfg.Inbound.HTTPPort, cfg.Inbound.SocksPort)
+				}
+				s.mu.Unlock()
+				s.notifyStateChange()
+				return &core.CompileResult{Warnings: startResp.Warnings}, nil
 			}
 		}
-		s.usingHelper = true
-		s.mu.Unlock()
-		s.notifyStateChange()
-		return &core.CompileResult{Warnings: startResp.Warnings}, nil
 	}
 
 	res, err := s.engine.Start(ctx, cfg, 0)
@@ -417,6 +431,15 @@ func (s *AppService) GetBypassPresets() []dpi.Strategy {
 }
 
 func (s *AppService) GetBypassCapabilityStatus() dpi.CapabilityStatus {
+	s.mu.Lock()
+	useHelper := s.usingHelper
+	s.mu.Unlock()
+	if useHelper {
+		st := s.GetStats()
+		if st.BypassCapability.OS != "" {
+			return st.BypassCapability
+		}
+	}
 	cfg := s.store.Get()
 	_, status := dpi.ResolveEffectiveStrategy(cfg.Routing.DirectBypass, dpi.HasRawSocketCapability())
 	return status

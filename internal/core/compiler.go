@@ -14,6 +14,13 @@ type CompileWarning struct {
 	Message string `json:"message"`
 }
 
+type CompileOptions struct {
+	// BypassSocksPort, when > 0, compiles the "direct-bypass" outbound as a loopback
+	// SOCKS5 bridge to the built-in Go internal/dpi engine so external sing-box/TUN
+	// runs inherit full SNI-midpoint split, disorder, OOB, Raw Fake, QUIC, and per-domain cache.
+	BypassSocksPort int
+}
+
 type CompileResult struct {
 	Config           map[string]any   `json:"config"`
 	JSON             []byte           `json:"-"`
@@ -25,6 +32,11 @@ type CompileResult struct {
 
 // CompileSingBoxConfig translates AppConfig into a complete hiddify-sing-box v5 JSON configuration.
 func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, error) {
+	return CompileSingBoxConfigWithOptions(cfg, tunFD, CompileOptions{})
+}
+
+// CompileSingBoxConfigWithOptions translates AppConfig with optional runtime bridge settings.
+func CompileSingBoxConfigWithOptions(cfg *config.AppConfig, tunFD int, opts CompileOptions) (*CompileResult, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -244,12 +256,17 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	if fragSleep == "" {
 		fragSleep = "2-8ms"
 	}
-	outbounds = append(outbounds,
-		map[string]any{
-			"type": "direct",
-			"tag":  "direct",
-		},
-		map[string]any{
+	var directBypassOutbound map[string]any
+	if opts.BypassSocksPort > 0 {
+		directBypassOutbound = map[string]any{
+			"type":        "socks",
+			"tag":         "direct-bypass",
+			"server":      "127.0.0.1",
+			"server_port": opts.BypassSocksPort,
+			"version":     "5",
+		}
+	} else {
+		directBypassOutbound = map[string]any{
 			"type":                "direct",
 			"tag":                 "direct-bypass",
 			"tls_fragment":        true,
@@ -259,7 +276,14 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 				"fragment_size":  fragSize,
 				"fragment_sleep": fragSleep,
 			},
+		}
+	}
+	outbounds = append(outbounds,
+		map[string]any{
+			"type": "direct",
+			"tag":  "direct",
 		},
+		directBypassOutbound,
 	)
 
 	listenAddr := "127.0.0.1"

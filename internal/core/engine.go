@@ -22,18 +22,19 @@ import (
 )
 
 type TrafficStats struct {
-	Running   bool   `json:"running"`
-	UpBytes   int64  `json:"up_bytes"`
-	DownBytes int64  `json:"down_bytes"`
-	Mode      string `json:"mode"`
+	Running          bool                 `json:"running"`
+	UpBytes          int64                `json:"up_bytes"`
+	DownBytes        int64                `json:"down_bytes"`
+	Mode             string               `json:"mode"`
 	ChainDesc        string               `json:"chain_desc"`
 	BypassCapability dpi.CapabilityStatus `json:"bypass_capability"`
 }
 
 // Engine manages the lifecycle of the local proxy / sing-box core.
-// If MYVPN_SINGBOX_BIN is set and executable, it runs hiddify-sing-box directly;
-// otherwise it runs the built-in Go SOCKS5/HTTP routing & chaining proxy engine
-// (used for local dev, unit/integration loopback tests, and proxy-only fallback).
+// If MYVPN_SINGBOX_BIN is set and executable, it runs hiddify-sing-box directly
+// alongside a loopback Go DPI SOCKS5 bridge so TUN/sing-box runs inherit the full
+// internal/dpi engine (SNI midpoint split, disorder, OOB, Raw Fake, QUIC, per-domain cache).
+// Otherwise it runs the built-in Go SOCKS5/HTTP routing & chaining proxy engine.
 type Engine struct {
 	mu           sync.Mutex
 	running      bool
@@ -43,6 +44,7 @@ type Engine struct {
 	singboxBin   string
 	cmd          *exec.Cmd
 	socksLn      net.Listener
+	dpiSocksLn   net.Listener
 	httpSrv      *http.Server
 	upstreamAddr string // optional SOCKS5 upstream for loopback/sidecar chaining
 	bypassDialer *BypassDialer
@@ -82,27 +84,53 @@ func (e *Engine) Start(ctx context.Context, cfg *config.AppConfig, tunFD int) (*
 		_ = e.stopLocked()
 	}
 
-	res, err := CompileSingBoxConfig(cfg, tunFD)
-	if err != nil {
-		return nil, err
-	}
 	if err := os.MkdirAll(e.workDir, 0o700); err != nil {
-		return nil, err
-	}
-	cfgPath := filepath.Join(e.workDir, "sing-box.json")
-	if err := os.WriteFile(cfgPath, res.JSON, 0o600); err != nil {
 		return nil, err
 	}
 
 	e.cfg = cfg
-	e.compileRes = res
 	if !e.customBypass {
 		e.bypassDialer = NewBypassDialerWithCache(cfg.Routing.DirectBypass, e.domainCache)
 	}
 
+	var compileOpts CompileOptions
+	if e.singboxBin != "" {
+		// Start loopback Go DPI SOCKS5 bridge so external sing-box direct-bypass traffic
+		// uses the full internal/dpi engine (disorder, OOB, Raw Fake, QUIC, per-domain cache).
+		dpiLn, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, fmt.Errorf("listen dpi bridge socks5: %w", err)
+		}
+		e.dpiSocksLn = dpiLn
+		compileOpts.BypassSocksPort = dpiLn.Addr().(*net.TCPAddr).Port
+		go e.acceptDPISocksLoop(dpiLn)
+	}
+
+	res, err := CompileSingBoxConfigWithOptions(cfg, tunFD, compileOpts)
+	if err != nil {
+		if e.dpiSocksLn != nil {
+			_ = e.dpiSocksLn.Close()
+			e.dpiSocksLn = nil
+		}
+		return nil, err
+	}
+	cfgPath := filepath.Join(e.workDir, "sing-box.json")
+	if err := os.WriteFile(cfgPath, res.JSON, 0o600); err != nil {
+		if e.dpiSocksLn != nil {
+			_ = e.dpiSocksLn.Close()
+			e.dpiSocksLn = nil
+		}
+		return nil, err
+	}
+	e.compileRes = res
+
 	if e.singboxBin != "" {
 		cmd := exec.CommandContext(ctx, e.singboxBin, "run", "-c", cfgPath)
 		if err := cmd.Start(); err != nil {
+			if e.dpiSocksLn != nil {
+				_ = e.dpiSocksLn.Close()
+				e.dpiSocksLn = nil
+			}
 			return nil, fmt.Errorf("start hiddify-sing-box: %w", err)
 		}
 		e.cmd = cmd
@@ -151,6 +179,10 @@ func (e *Engine) stopLocked() error {
 		_ = e.cmd.Process.Kill()
 		_, _ = e.cmd.Process.Wait()
 		e.cmd = nil
+	}
+	if e.dpiSocksLn != nil {
+		_ = e.dpiSocksLn.Close()
+		e.dpiSocksLn = nil
 	}
 	if e.socksLn != nil {
 		_ = e.socksLn.Close()
@@ -243,11 +275,21 @@ func (e *Engine) acceptSocksLoop(ln net.Listener) {
 		if err != nil {
 			return
 		}
-		go e.handleSocks5(c)
+		go e.handleSocks5(c, false)
 	}
 }
 
-func (e *Engine) handleSocks5(c net.Conn) {
+func (e *Engine) acceptDPISocksLoop(ln net.Listener) {
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go e.handleSocks5(c, true)
+	}
+}
+
+func (e *Engine) handleSocks5(c net.Conn, forceBypass bool) {
 	defer c.Close()
 	br := bufio.NewReader(c)
 	ver, err := br.ReadByte()
@@ -308,7 +350,21 @@ func (e *Engine) handleSocks5(c net.Conn) {
 	}
 	port := int(binary.BigEndian.Uint16(portBuf))
 
-	rc, err := e.dialTarget(host, port)
+	var rc net.Conn
+	if forceBypass {
+		e.mu.Lock()
+		bd := e.bypassDialer
+		e.mu.Unlock()
+		if bd != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			rc, err = bd.Dial(ctx, host, port)
+			cancel()
+		} else {
+			rc, err = net.DialTimeout("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)), 5*time.Second)
+		}
+	} else {
+		rc, err = e.dialTarget(host, port)
+	}
 	if err != nil {
 		_, _ = c.Write([]byte{0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		return
