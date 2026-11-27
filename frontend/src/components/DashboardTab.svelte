@@ -2,110 +2,162 @@
   import {
     ArrowDown,
     ArrowUp,
+    ChevronRight,
+    ExternalLink,
     Power,
     RefreshCw,
     ShieldAlert,
+    SlidersHorizontal,
   } from "@lucide/svelte";
-  import { formatBytes, type ChainAnalysis } from "../lib/chain";
+  import { formatBytes, type ChainAnalysis, type HopKind } from "../lib/chain";
   import type { AppFormState } from "../lib/config_state";
+  import type { ExternalNode } from "../lib/mygo";
+  import type { PlatformUIProfile } from "../lib/platform";
   import { formatLatency, type ChainProbeResult } from "../lib/probe";
   import Toggle from "./Toggle.svelte";
 
   interface Props {
     form: AppFormState;
+    platformUI: PlatformUIProfile;
     connected: boolean;
     busyConnect: boolean;
+    switchingMode: boolean;
     lanIP: string;
     upBytes: number;
     downBytes: number;
     chainInfo: ChainAnalysis;
+    sortedExternalNodes: ExternalNode[];
     backendWarnings: Array<{ code: string; message: string }>;
     activeProbeURL: string;
     probing: boolean;
     probeResult: ChainProbeResult | null;
     onToggleConnect: () => void;
     onSetInboundMode: (mode: "proxy" | "tun") => void;
+    onChainChange: () => void;
     onAllowLANChange: () => void;
     onKillSwitchChange: () => void;
+    onOpenAndroidVpnSettings: () => void;
+    onOpenSettingsSubpage: (sub: "protocols" | "routing") => void;
     onRunProbe: () => void;
   }
 
   let {
     form,
+    platformUI,
     connected,
     busyConnect,
+    switchingMode,
     lanIP,
     upBytes,
     downBytes,
     chainInfo,
+    sortedExternalNodes,
     backendWarnings,
     activeProbeURL,
     probing,
     probeResult,
     onToggleConnect,
     onSetInboundMode,
+    onChainChange,
     onAllowLANChange,
     onKillSwitchChange,
+    onOpenAndroidVpnSettings,
+    onOpenSettingsSubpage,
     onRunProbe,
   }: Props = $props();
+
+  let isDirectBypass = $derived(form.chain.hop1.kind === "direct_bypass");
+
+  function setHop(which: "hop1" | "hop2", kind: string) {
+    const nextKind = kind as HopKind;
+    const defaultNodeId =
+      nextKind === "external" ? sortedExternalNodes[0]?.id : undefined;
+    form.chain = {
+      ...form.chain,
+      two_hop:
+        which === "hop1" && nextKind === "direct_bypass"
+          ? false
+          : form.chain.two_hop,
+      [which]: { kind: nextKind, node_id: defaultNodeId },
+    };
+    onChainChange();
+  }
+
+  function setHopNode(which: "hop1" | "hop2", nodeId: string) {
+    form.chain = {
+      ...form.chain,
+      [which]: { ...form.chain[which], node_id: nodeId || undefined },
+    };
+    onChainChange();
+  }
 </script>
 
+<!-- Hero VPN Connection Card -->
 <section
-  class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+  class="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
 >
-  <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-    <div class="space-y-1">
-      <div class="flex items-center gap-2">
-        <span
-          class="inline-block h-2.5 w-2.5 rounded-full {connected
-            ? 'bg-emerald-500'
-            : 'bg-zinc-300 dark:bg-zinc-600'}"
-        ></span>
-        <h1 class="text-lg font-semibold">
-          {connected ? "已连接" : "未连接"}
-        </h1>
-        <span
-          class="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-        >
-          {form.inboundMode === "tun" ? "TUN 模式" : "本地代理"}
-        </span>
-      </div>
-      <p class="text-sm text-zinc-500 dark:text-zinc-400">
-        {chainInfo.label}
-      </p>
-      {#if chainInfo.warning}
-        <p
-          class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400"
-        >
-          <ShieldAlert class="h-3.5 w-3.5 shrink-0" />
-          <span>{chainInfo.warning}</span>
-        </p>
-      {/if}
-      {#each backendWarnings as w}
-        <p
-          class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400"
-        >
-          <ShieldAlert class="h-3.5 w-3.5 shrink-0" />
-          <span>{w.message}</span>
-        </p>
-      {/each}
+  <div class="flex flex-col items-center text-center">
+    <div class="mb-4 flex items-center gap-2">
+      <span
+        class="inline-block h-2.5 w-2.5 rounded-full {connected
+          ? 'bg-emerald-500'
+          : 'bg-zinc-300 dark:bg-zinc-600'}"
+      ></span>
+      <span class="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+        {busyConnect
+          ? connected
+            ? "正在断开..."
+            : "正在连接..."
+          : connected
+            ? "已保护连接"
+            : "未连接"}
+      </span>
+      <span
+        class="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+      >
+        {form.inboundMode === "tun" ? platformUI.tunBadgeLabel : "本地代理"}
+      </span>
     </div>
 
     <button
       type="button"
-      disabled={busyConnect}
-      class="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white transition disabled:opacity-50 {connected
-        ? 'bg-red-600 hover:bg-red-700'
-        : 'bg-blue-600 hover:bg-blue-700'}"
+      disabled={busyConnect || switchingMode}
+      aria-label={connected ? "断开连接" : "开始连接"}
       onclick={onToggleConnect}
+      class="group relative flex h-28 w-28 items-center justify-center rounded-full border-4 transition-all active:scale-95 disabled:opacity-60 {connected
+        ? 'border-emerald-200 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 dark:border-emerald-900/70'
+        : 'border-blue-100 bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 dark:border-blue-950'}"
     >
-      <Power class="h-4 w-4" />
-      <span>{connected ? "断开" : "连接"}</span>
+      <Power class="h-10 w-10" />
     </button>
+
+    <p class="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+      {chainInfo.label}
+    </p>
+    <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+      {connected ? "点击按钮断开当前连接" : "点击按钮立即建立加密或防干扰连接"}
+    </p>
+
+    {#if chainInfo.warning}
+      <p
+        class="mt-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+      >
+        <ShieldAlert class="h-3.5 w-3.5 shrink-0" />
+        <span>{chainInfo.warning}</span>
+      </p>
+    {/if}
+    {#each backendWarnings as w}
+      <p
+        class="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+      >
+        <ShieldAlert class="h-3.5 w-3.5 shrink-0" />
+        <span>{w.message}</span>
+      </p>
+    {/each}
   </div>
 
   <div
-    class="mt-4 grid grid-cols-2 gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 sm:grid-cols-4"
+    class="mt-6 grid grid-cols-2 gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 sm:grid-cols-4"
   >
     <div>
       <p class="text-xs text-zinc-500 dark:text-zinc-400">上行流量</p>
@@ -136,13 +188,159 @@
   </div>
 </section>
 
+<!-- Inline Route / Chain Selector (instant auto-save, no Save button) -->
+<section
+  class="space-y-3.5 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+>
+  <div class="flex items-center justify-between gap-2">
+    <h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+      连接线路
+    </h2>
+    {#if isDirectBypass}
+      <button
+        type="button"
+        onclick={() => onOpenSettingsSubpage("routing")}
+        class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+      >
+        <SlidersHorizontal class="h-3.5 w-3.5" />
+        <span>反 DPI 策略</span>
+      </button>
+    {:else}
+      <button
+        type="button"
+        onclick={() => onOpenSettingsSubpage("protocols")}
+        class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+      >
+        <SlidersHorizontal class="h-3.5 w-3.5" />
+        <span>节点与协议设置</span>
+      </button>
+    {/if}
+  </div>
+
+  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div class="space-y-2">
+      <label class="flex flex-col gap-1.5 text-sm">
+        <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+          {isDirectBypass
+            ? "工作模式"
+            : form.chain.two_hop
+              ? "第一跳（前置）"
+              : "出口线路"}
+        </span>
+        <select
+          class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          value={form.chain.hop1.kind}
+          onchange={(e) => setHop("hop1", e.currentTarget.value)}
+        >
+          <option value="direct_bypass">直连绕过（无服务器 · 防干扰）</option>
+          <option value="geph">迷雾通 (Geph5)</option>
+          <option value="psiphon">赛风 (Psiphon · 仅 TCP)</option>
+          <option value="warp">Cloudflare WARP</option>
+          <option value="external">外部节点</option>
+        </select>
+      </label>
+      {#if form.chain.hop1.kind === "external"}
+        {#if sortedExternalNodes.length > 0}
+          <select
+            class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+            value={form.chain.hop1.node_id ?? ""}
+            onchange={(e) => setHopNode("hop1", e.currentTarget.value)}
+          >
+            {#each sortedExternalNodes as node}
+              <option value={node.id}>
+                {node.name} ({node.protocol})
+              </option>
+            {/each}
+          </select>
+        {:else}
+          <button
+            type="button"
+            onclick={() => onOpenSettingsSubpage("protocols")}
+            class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+          >
+            尚未导入外部节点，前往「设置 → 节点与协议」添加 →
+          </button>
+        {/if}
+      {/if}
+    </div>
+
+    {#if form.chain.two_hop && !isDirectBypass}
+      <div class="space-y-2">
+        <label class="flex flex-col gap-1.5 text-sm">
+          <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            第二跳（落地）
+          </span>
+          <select
+            class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            value={form.chain.hop2.kind}
+            onchange={(e) => setHop("hop2", e.currentTarget.value)}
+          >
+            <option value="warp">Cloudflare WARP</option>
+            <option value="geph">迷雾通 (Geph5)</option>
+            <option value="psiphon">赛风 (Psiphon)</option>
+            <option value="external">外部节点</option>
+          </select>
+        </label>
+        {#if form.chain.hop2.kind === "external"}
+          {#if sortedExternalNodes.length > 0}
+            <select
+              class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+              value={form.chain.hop2.node_id ?? ""}
+              onchange={(e) => setHopNode("hop2", e.currentTarget.value)}
+            >
+              {#each sortedExternalNodes as node}
+                <option value={node.id}>
+                  {node.name} ({node.protocol})
+                </option>
+              {/each}
+            </select>
+          {:else}
+            <button
+              type="button"
+              onclick={() => onOpenSettingsSubpage("protocols")}
+              class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+            >
+              尚未导入外部节点，前往「设置 → 节点与协议」添加 →
+            </button>
+          {/if}
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  {#if !isDirectBypass}
+    <div class="border-t border-zinc-100 pt-1 dark:border-zinc-800">
+      <Toggle
+        bind:checked={form.chain.two_hop}
+        label="启用双跳链式代理"
+        description="流量先经第一跳前置通道，再由第二跳落地访问目标网站"
+        onchange={onChainChange}
+      />
+    </div>
+  {:else}
+    <p
+      class="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800/70 dark:text-zinc-300"
+    >
+      无需服务器，通过静态 IP DoH 与反 DPI 分片混淆直连受干扰网站。
+    </p>
+  {/if}
+</section>
+
+<!-- Access Mode & Protection Card -->
 <section
   class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
 >
   <div class="flex items-center justify-between gap-2">
-    <h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-      接入模式与防护
-    </h2>
+    <div>
+      <h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        接入模式与防护
+      </h2>
+      {#if switchingMode}
+        <p class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
+          正在切换并重连...
+        </p>
+      {/if}
+    </div>
     <div
       role="tablist"
       aria-label="接入模式"
@@ -151,9 +349,10 @@
       <button
         type="button"
         role="tab"
+        disabled={switchingMode}
         aria-selected={form.inboundMode === "proxy"}
         onclick={() => onSetInboundMode("proxy")}
-        class="rounded-md px-3 py-1 text-xs font-medium transition {form.inboundMode ===
+        class="rounded-md px-3 py-1 text-xs font-medium transition disabled:opacity-50 {form.inboundMode ===
         'proxy'
           ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-700 dark:text-zinc-100'
           : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400'}"
@@ -163,14 +362,15 @@
       <button
         type="button"
         role="tab"
+        disabled={switchingMode}
         aria-selected={form.inboundMode === "tun"}
         onclick={() => onSetInboundMode("tun")}
-        class="rounded-md px-3 py-1 text-xs font-medium transition {form.inboundMode ===
+        class="rounded-md px-3 py-1 text-xs font-medium transition disabled:opacity-50 {form.inboundMode ===
         'tun'
           ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-700 dark:text-zinc-100'
           : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400'}"
       >
-        全局 TUN
+        {platformUI.tunModeLabel}
       </button>
     </div>
   </div>
@@ -184,15 +384,40 @@
         : "开启后允许同局域网的其他设备通过本机代理上网"}
       onchange={onAllowLANChange}
     />
-    <Toggle
-      bind:checked={form.killSwitch}
-      label="断网保护（Kill Switch）"
-      description="隧道异常中断时自动阻断非直连明文流量，防止真实 IP 泄露"
-      onchange={onKillSwitchChange}
-    />
+
+    {#if platformUI.killSwitchMode === "toggle"}
+      <Toggle
+        bind:checked={form.killSwitch}
+        label="断网保护（Kill Switch）"
+        description="隧道异常中断时自动阻断非直连明文流量，防止真实 IP 泄露"
+        onchange={onKillSwitchChange}
+      />
+    {:else}
+      <button
+        type="button"
+        onclick={onOpenAndroidVpnSettings}
+        class="flex w-full items-center justify-between gap-3 py-3 text-left transition hover:opacity-80"
+      >
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            断网保护（系统 VPN 设置）
+          </p>
+          <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            前往 Android 系统开启「始终开启的 VPN」与「阻断非 VPN 连接」
+          </p>
+        </div>
+        <span
+          class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400"
+        >
+          <ExternalLink class="h-3.5 w-3.5" />
+          <ChevronRight class="h-4 w-4" />
+        </span>
+      </button>
+    {/if}
   </div>
 </section>
 
+<!-- Connectivity & Exit Probe Card -->
 <section
   class="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
 >
@@ -212,7 +437,7 @@
       onclick={onRunProbe}
     >
       <RefreshCw class="h-3.5 w-3.5 {probing ? 'animate-spin' : ''}" />
-      <span>{probing ? "检测中..." : "检测各跳延迟"}</span>
+      <span>{probing ? "检测中..." : "检测延迟"}</span>
     </button>
   </div>
 
@@ -262,7 +487,7 @@
     </div>
   {:else}
     <p class="text-xs text-zinc-500 dark:text-zinc-400">
-      点击「检测各跳延迟」查看{form.chain.two_hop
+      点击「检测延迟」查看{form.chain.two_hop && !isDirectBypass
         ? "每一跳"
         : "当前出口"}的连通延迟、归属地与出口 IP。
     </p>

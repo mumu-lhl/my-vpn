@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    AlertCircle,
     Check,
     Plus,
     RefreshCw,
@@ -14,9 +15,9 @@
     mergeUniquePackages,
   } from "../lib/cn_apps";
   import {
-    buildPerAppCatalog,
+    buildPerAppBaseCatalog,
     fallbackPreviewInstalledApps,
-    filterAndSortPerApps,
+    filterPerAppBaseCatalog,
     selectClassicCNPackages,
     selectDetectedCNPackages,
     togglePackageSelection,
@@ -26,6 +27,7 @@
     mode: "all" | "whitelist" | "blacklist";
     selectedPackages: string[];
     bridgeReady: boolean;
+    isAndroid: boolean;
     onChange: () => void;
   }
 
@@ -33,38 +35,70 @@
     mode = $bindable<"all" | "whitelist" | "blacklist">("blacklist"),
     selectedPackages = $bindable<string[]>([]),
     bridgeReady,
+    isAndroid,
     onChange,
   }: Props = $props();
+
+  const PAGE_SIZE = 60;
 
   let installedApps = $state<InstalledApp[]>([]);
   let detectedOverride = $state<DetectedCNApp[] | undefined>(undefined);
   let loadedFromDevice = $state(false);
   let loadingApps = $state(false);
   let hasLoadedOnce = $state(false);
+  let loadError = $state("");
 
-  let searchQuery = $state("");
+  let searchInput = $state("");
+  let debouncedQuery = $state("");
   let showSystem = $state(false);
   let onlySelected = $state(false);
   let showManualInput = $state(false);
   let manualPkg = $state("");
   let actionNotice = $state("");
+  let renderLimit = $state(PAGE_SIZE);
 
-  let catalog = $derived(
-    buildPerAppCatalog(installedApps, selectedPackages, detectedOverride),
+  let searchTimer: number | undefined;
+
+  function onSearchInput(value: string) {
+    searchInput = value;
+    renderLimit = PAGE_SIZE;
+    if (searchTimer) window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      debouncedQuery = value;
+    }, 150);
+  }
+
+  function clearSearch() {
+    if (searchTimer) window.clearTimeout(searchTimer);
+    searchInput = "";
+    debouncedQuery = "";
+    renderLimit = PAGE_SIZE;
+  }
+
+  // Expensive detection & collation runs ONLY when installedApps or detectedOverride changes,
+  // never when toggling individual app checkboxes or typing in the search box.
+  let baseCatalog = $derived(
+    buildPerAppBaseCatalog(installedApps, detectedOverride),
   );
+
   let visibleApps = $derived(
-    filterAndSortPerApps(catalog, {
-      query: searchQuery,
+    filterPerAppBaseCatalog(baseCatalog, selectedPackages, {
+      query: debouncedQuery,
       showSystem,
       onlySelected,
       selectedFirst: true,
     }),
   );
+
+  let renderedApps = $derived(visibleApps.slice(0, renderLimit));
+  let hasMoreApps = $derived(visibleApps.length > renderLimit);
   let selectedCount = $derived(selectedPackages.length);
 
   async function refreshInstalledApps() {
     loadingApps = true;
     actionNotice = "";
+    loadError = "";
+    renderLimit = PAGE_SIZE;
     try {
       if (bridgeReady) {
         const res = await AndroidNetPlugin.listInstalledApps();
@@ -74,15 +108,32 @@
           hasLoadedOnce = true;
           return;
         }
+        if (isAndroid) {
+          installedApps = [];
+          loadedFromDevice = false;
+          hasLoadedOnce = true;
+          loadError =
+            "未读取到已安装应用列表，请确认系统允许读取应用列表权限后重试。";
+          return;
+        }
       }
-    } catch {
-      // Desktop Linux / browser preview does not have Android PackageManager.
+    } catch (err) {
+      if (isAndroid) {
+        installedApps = [];
+        loadedFromDevice = false;
+        hasLoadedOnce = true;
+        loadError = `读取手机应用列表失败：${err instanceof Error ? err.message : String(err)}`;
+        return;
+      }
     } finally {
       loadingApps = false;
     }
-    installedApps = fallbackPreviewInstalledApps();
-    loadedFromDevice = false;
-    hasLoadedOnce = true;
+
+    if (!isAndroid) {
+      installedApps = fallbackPreviewInstalledApps();
+      loadedFromDevice = false;
+      hasLoadedOnce = true;
+    }
   }
 
   $effect(() => {
@@ -166,6 +217,14 @@
     onChange();
   }
 
+  function handleListScroll(e: Event) {
+    if (!hasMoreApps) return;
+    const el = e.currentTarget as HTMLDivElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+      renderLimit += PAGE_SIZE;
+    }
+  }
+
   function avatarInitial(label: string, pkg: string): string {
     const src = (label || pkg).trim();
     return src ? src.slice(0, 1).toUpperCase() : "?";
@@ -194,17 +253,18 @@
   <div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
     <div>
       <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-        分应用代理（Android）
+        分应用代理
       </h2>
       <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-        选择哪些应用走代理或直连，Looma 自身会自动排除以防流量回环
+        选择哪些应用走代理或直连，Looma
+        自身会自动排除以防流量回环，修改即自动保存
       </p>
     </div>
     {#if mode !== "all"}
       <span
         class="self-start rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 sm:self-auto"
       >
-        已选 {selectedCount} / {catalog.length}
+        已选 {selectedCount} / {baseCatalog.length}
       </span>
     {/if}
   </div>
@@ -265,15 +325,16 @@
           />
           <input
             type="search"
-            bind:value={searchQuery}
+            value={searchInput}
+            oninput={(e) => onSearchInput(e.currentTarget.value)}
             placeholder="搜索应用名称、包名或分类..."
             class="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pl-9 pr-8 text-sm text-zinc-900 outline-none transition focus:border-blue-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
           />
-          {#if searchQuery}
+          {#if searchInput}
             <button
               type="button"
               aria-label="清除搜索"
-              onclick={() => (searchQuery = "")}
+              onclick={clearSearch}
               class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
             >
               <X class="h-3.5 w-3.5" />
@@ -290,6 +351,24 @@
           <span>{loadingApps ? "读取中..." : "刷新列表"}</span>
         </button>
       </div>
+
+      {#if loadError}
+        <div
+          class="flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-300"
+        >
+          <div class="flex items-start gap-2">
+            <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onclick={refreshInstalledApps}
+            class="shrink-0 font-medium underline"
+          >
+            重试
+          </button>
+        </div>
+      {/if}
 
       <div class="flex flex-wrap items-center gap-1.5">
         <button
@@ -338,7 +417,10 @@
         <div class="flex items-center gap-3">
           <button
             type="button"
-            onclick={() => (showSystem = !showSystem)}
+            onclick={() => {
+              showSystem = !showSystem;
+              renderLimit = PAGE_SIZE;
+            }}
             class="inline-flex items-center gap-1.5 transition hover:text-zinc-900 dark:hover:text-zinc-100"
           >
             <span
@@ -354,7 +436,10 @@
           </button>
           <button
             type="button"
-            onclick={() => (onlySelected = !onlySelected)}
+            onclick={() => {
+              onlySelected = !onlySelected;
+              renderLimit = PAGE_SIZE;
+            }}
             class="inline-flex items-center gap-1.5 transition hover:text-zinc-900 dark:hover:text-zinc-100"
           >
             <span
@@ -369,11 +454,13 @@
             <span>仅看已选</span>
           </button>
         </div>
-        {#if !loadedFromDevice}
-          <span class="text-[11px] text-zinc-400 dark:text-zinc-500">
-            桌面预览模式 · 展示常用应用目录
-          </span>
-        {/if}
+        <span class="text-[11px] text-zinc-400 dark:text-zinc-500">
+          {loadedFromDevice
+            ? `已匹配 ${visibleApps.length} 个应用`
+            : isAndroid
+              ? "等待读取设备应用"
+              : "预览模式"}
+        </span>
       </div>
 
       {#if showManualInput}
@@ -400,24 +487,27 @@
       {/if}
 
       <div
-        class="max-h-80 divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800/80 dark:border-zinc-800"
+        onscroll={handleListScroll}
+        class="max-h-[60vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800/80 dark:border-zinc-800"
       >
-        {#if visibleApps.length === 0}
+        {#if renderedApps.length === 0}
           <div
             class="px-4 py-8 text-center text-xs text-zinc-500 dark:text-zinc-400"
           >
-            {onlySelected
-              ? "尚未勾选任何应用"
-              : "未找到匹配的应用，可尝试切换搜索词或显示系统应用"}
+            {loadingApps
+              ? "正在读取手机已安装应用..."
+              : onlySelected
+                ? "尚未勾选任何应用"
+                : "未找到匹配的应用，可尝试切换搜索词或开启「显示系统应用」"}
           </div>
         {:else}
-          {#each visibleApps as app (app.package_name)}
+          {#each renderedApps as app (app.package_name)}
             <button
               type="button"
               role="checkbox"
               aria-checked={app.selected}
               onclick={() => handleToggleApp(app.package_name)}
-              class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+              class="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
             >
               <span
                 class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold {avatarTone(
@@ -457,7 +547,7 @@
               </div>
 
               <span
-                class="flex h-5 w-5 shrink-0 items-center justify-center rounded border transition {app.selected
+                class="flex h-5 w-5 shrink-0 items-center justify-center rounded border {app.selected
                   ? 'border-blue-600 bg-blue-600 text-white'
                   : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900'}"
               >
@@ -467,6 +557,16 @@
               </span>
             </button>
           {/each}
+
+          {#if hasMoreApps}
+            <button
+              type="button"
+              onclick={() => (renderLimit += PAGE_SIZE)}
+              class="w-full py-2.5 text-center text-xs font-medium text-blue-600 hover:bg-zinc-50 dark:text-blue-400 dark:hover:bg-zinc-800/50"
+            >
+              继续加载更多（剩余 {visibleApps.length - renderedApps.length} 个）
+            </button>
+          {/if}
         {/if}
       </div>
     </div>

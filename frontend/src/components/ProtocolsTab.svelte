@@ -12,6 +12,7 @@
     sortedExternalNodes: ExternalNode[];
     testingNodes: boolean;
     onLoadGephExits: () => void;
+    onAutoSave: () => void;
     onSave: () => void;
     onImportSub: () => void;
     onTestAllNodes: () => void;
@@ -25,24 +26,39 @@
     sortedExternalNodes,
     testingNodes,
     onLoadGephExits,
+    onAutoSave,
     onSave,
     onImportSub,
     onTestAllNodes,
   }: Props = $props();
+
+  const QUICK_GEPH_REGIONS = [
+    { code: "auto", label: "自动" },
+    { code: "JP", label: "日本" },
+    { code: "SG", label: "新加坡" },
+    { code: "US", label: "美国" },
+    { code: "DE", label: "德国" },
+    { code: "NL", label: "荷兰" },
+  ];
 </script>
 
 <section
   class="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
 >
-  <div class="flex items-center justify-between">
-    <h2 class="text-base font-semibold">迷雾通 (Geph5)</h2>
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <h2 class="text-base font-semibold">迷雾通 (Geph5)</h2>
+      <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+        填写账号 Secret 后在主页连接迷雾通，连接后可拉取实时出口列表
+      </p>
+    </div>
     <button
       type="button"
       class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
       onclick={onLoadGephExits}
     >
       <RefreshCw class="h-3.5 w-3.5" />
-      <span>刷新出口列表</span>
+      <span>刷新实时出口</span>
     </button>
   </div>
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -69,20 +85,44 @@
       />
     </label>
   </div>
-  {#if gephExits.length > 0}
-    <div class="flex flex-wrap gap-1.5 pt-1">
+
+  <div class="flex flex-wrap gap-1.5 pt-1">
+    {#if gephExits.length > 0}
       {#each gephExits as ex}
         <button
           type="button"
-          class="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs hover:border-blue-400 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-blue-500"
-          onclick={() => (form.gephCountry = ex.country)}
+          class="rounded-md border px-2.5 py-1 text-xs transition {form.gephCountry.toUpperCase() ===
+          ex.country.toUpperCase()
+            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+            : 'border-zinc-200 bg-zinc-50 hover:border-blue-400 dark:border-zinc-700 dark:bg-zinc-800'}"
+          onclick={() => {
+            form.gephCountry = ex.country;
+            onAutoSave();
+          }}
         >
           {countryCodeToFlag(ex.country)}
           {ex.country} · {ex.city}
         </button>
       {/each}
-    </div>
-  {/if}
+    {:else}
+      {#each QUICK_GEPH_REGIONS as r}
+        <button
+          type="button"
+          class="rounded-md border px-2.5 py-1 text-xs transition {form.gephCountry.toLowerCase() ===
+          r.code.toLowerCase()
+            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+            : 'border-zinc-200 bg-zinc-50 hover:border-blue-400 dark:border-zinc-700 dark:bg-zinc-800'}"
+          onclick={() => {
+            form.gephCountry = r.code;
+            onAutoSave();
+          }}
+        >
+          {r.code === "auto" ? "🌐" : countryCodeToFlag(r.code)}
+          {r.label}
+        </button>
+      {/each}
+    {/if}
+  </div>
 </section>
 
 <section
@@ -118,6 +158,7 @@
       <select
         class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
         bind:value={form.warpMode}
+        onchange={onAutoSave}
       >
         <option value="auto">自动</option>
         <option value="wg">WireGuard</option>
@@ -153,6 +194,7 @@
       <select
         class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
         bind:value={form.warpMasqueVhttp}
+        onchange={onAutoSave}
       >
         <option value="auto">自动（优先 HTTP/3，超时回退 HTTP/2）</option>
         <option value="h3">HTTP/3 (QUIC)</option>

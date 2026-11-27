@@ -58,6 +58,23 @@ export interface AppFormState {
   externalNodes: ExternalNode[];
 }
 
+/**
+ * Safely deep-clones a plain or Svelte 5 `$state` Proxy record without calling
+ * `structuredClone` directly (which throws DataCloneError on Proxy objects in WebView/Chromium).
+ */
+export function clonePlainRecord(
+  input: Record<string, any> | null | undefined,
+): Record<string, any> {
+  if (!input || typeof input !== "object") {
+    return {};
+  }
+  try {
+    return JSON.parse(JSON.stringify(input)) as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
 export function createDefaultFormState(): AppFormState {
   return {
     inboundMode: "proxy",
@@ -231,7 +248,7 @@ export function buildConfigPayload(
   rawConfig: Record<string, any>,
   form: AppFormState,
 ): Record<string, any> {
-  const base = structuredClone(rawConfig);
+  const base = clonePlainRecord(rawConfig);
   const dohStaticIPs = form.directBypassDoHStaticIPs
     .split(/[\s,]+/)
     .map((s) => s.trim())
@@ -323,7 +340,7 @@ export function buildConfigPayload(
     android: {
       ...base.android,
       per_app_mode: form.perAppMode,
-      per_app_packages: form.excludedPackages,
+      per_app_packages: [...form.excludedPackages],
     },
   };
 }

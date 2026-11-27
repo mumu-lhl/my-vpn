@@ -18,14 +18,17 @@
     type BypassStrategy,
     type DomainCacheEntry,
   } from "../lib/mygo";
+  import type { PlatformUIProfile } from "../lib/platform";
   import Toggle from "./Toggle.svelte";
 
   interface Props {
     form: AppFormState;
+    platformUI: PlatformUIProfile;
+    onAutoSave: () => void;
     onSave: () => void;
   }
 
-  let { form, onSave }: Props = $props();
+  let { form, platformUI, onAutoSave, onSave }: Props = $props();
 
   const FALLBACK_PRESETS: BypassStrategy[] = [
     {
@@ -115,8 +118,15 @@
   let probeReport = $state<AutoProbeReport | null>(null);
   let probeError = $state<string | null>(null);
 
+  let visiblePresets = $derived(
+    platformUI.showLinuxRawFake
+      ? presets
+      : presets.filter((p) => !p.requires_raw),
+  );
+
   let activePreset = $derived(
-    presets.find((p) => p.id === form.directBypassPresetID) ?? presets[0],
+    visiblePresets.find((p) => p.id === form.directBypassPresetID) ??
+      visiblePresets[0],
   );
 
   async function loadBypassState() {
@@ -141,7 +151,7 @@
 
   function applyPreset(id: string) {
     form.directBypassPresetID = id;
-    const p = presets.find((item) => item.id === id);
+    const p = visiblePresets.find((item) => item.id === id);
     if (!p) return;
     form.directBypassSplitAtSNI = p.split_at_sni;
     form.directBypassMixSNICase = p.mix_sni_case;
@@ -153,10 +163,13 @@
     form.directBypassEnableOOB = p.methods.includes("oob");
     form.directBypassEnableFakeTTL = p.methods.includes("fake_ttl");
     if (p.ttl > 0) form.directBypassFakeTTL = p.ttl;
-    form.directBypassEnableRawFake = p.requires_raw;
+    form.directBypassEnableRawFake = platformUI.showLinuxRawFake
+      ? p.requires_raw
+      : false;
     form.directBypassHttpMixHostCase = p.http_mix_host_case;
     form.directBypassQUICMode =
       p.quic_mode === "block" || p.quic_mode === "pass" ? p.quic_mode : "fake";
+    onAutoSave();
   }
 
   async function runAutoProbe() {
@@ -204,7 +217,7 @@
   class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
 >
   <div class="flex items-center justify-between">
-    <h2 class="text-base font-semibold">路由与 DNS</h2>
+    <h2 class="text-base font-semibold">分流与 DNS</h2>
     <button
       type="button"
       class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
@@ -220,26 +233,31 @@
       bind:checked={form.bypassCN}
       label="中国大陆流量直连"
       description="国内 IP 与常见国内域名绕过代理直接访问"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.bypassPrivate}
       label="局域网与私有地址直连"
       description="内网设备与保留地址段不经代理转发"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.blockAds}
       label="拦截常见广告与跟踪域名"
       description="自动拒绝广告与隐私追踪请求"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypass}
       label="启用预设防干扰域名清单"
       description="对 Pixiv、Wikipedia、GitHub 等常见受干扰站点自动应用直连分片"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.fakeIP}
       label="启用 FakeIP"
-      description="在 TUN 模式下加快 DNS 响应并防止 DNS 泄露"
+      description="在 {platformUI.tunBadgeLabel} 下加快 DNS 响应并防止 DNS 泄露"
+      onchange={onAutoSave}
     />
   </div>
 
@@ -274,8 +292,9 @@
     <div>
       <h2 class="text-base font-semibold">强力反 DPI（无服务器直连绕过）</h2>
       <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-        免 Root 用户态极限（SNI 精准切分、乱序、OOB、QUIC、ECH）与 Linux
-        内核级诱饵包
+        {platformUI.showLinuxRawFake
+          ? "免 Root 用户态极限（SNI 精准切分、乱序、OOB、QUIC、ECH）与 Linux 内核级诱饵包"
+          : "免 Root 用户态强力反 DPI（SNI 精准切分、乱序、OOB、QUIC、ECH）"}
       </p>
     </div>
     <button
@@ -288,7 +307,7 @@
     </button>
   </div>
 
-  {#if capability?.degraded && capability.notice}
+  {#if platformUI.showLinuxRawFake && capability?.degraded && capability.notice}
     <p
       class="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
     >
@@ -304,10 +323,10 @@
       </span>
       <select
         class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-        value={form.directBypassPresetID}
+        value={activePreset?.id ?? form.directBypassPresetID}
         onchange={(e) => applyPreset(e.currentTarget.value)}
       >
-        {#each presets as p}
+        {#each visiblePresets as p}
           <option value={p.id}>{p.name}</option>
         {/each}
       </select>
@@ -325,6 +344,7 @@
       <select
         class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
         bind:value={form.directBypassScope}
+        onchange={onAutoSave}
       >
         <option value="global">除国内与私有地址外全部绕过</option>
         <option value="list">仅预设与自定义规则域名绕过</option>
@@ -338,6 +358,7 @@
       <select
         class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
         bind:value={form.directBypassQUICMode}
+        onchange={onAutoSave}
       >
         <option value="fake">发送 QUIC Initial 诱饵包混淆（推荐）</option>
         <option value="block">拦截 UDP 443 强制回落 TCP/TLS</option>
@@ -356,8 +377,7 @@
           一键自动探测当前网络最优策略
         </h3>
         <p class="text-xs text-zinc-500 dark:text-zinc-400">
-          自动遍历 5 套预设并检测 DoH HTTPS RR / ECH
-          支持情况，选出延迟最低的可用方案
+          自动遍历预设并检测 DoH HTTPS RR / ECH 支持情况，选出延迟最低的可用方案
         </p>
       </div>
     </div>
@@ -400,7 +420,6 @@
               onclick={() => {
                 if (probeReport?.recommended_id) {
                   applyPreset(probeReport.recommended_id);
-                  onSave();
                 }
               }}
               class="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700"
@@ -438,51 +457,63 @@
       bind:checked={form.directBypassSplitAtSNI}
       label="精准 SNI 域名中点切分"
       description="解析 TLS ClientHello server_name 扩展偏移，保证在域名字符中间切开"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassMixSNICase}
       label="TLS SNI 大小写混合"
       description="对 ClientHello 中的 SNI 域名进行大小写交替改写"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassRecordFragment}
       label="TLS Record 级分片"
       description="将 ClientHello 拆分为多个合法 TLS 握手记录"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassEnableDisorder}
       label="TCP Disorder 乱序发送"
-      description="临时压低首片 IP_TTL 触发重传乱序到达，绕过顺序流检测（免 Root）"
+      description="临时压低首片 IP_TTL 触发重传乱序到达，绕过顺序流检测"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassEnableOOB}
       label="TCP MSG_OOB 带外字节注入"
-      description="在 SNI 切分点插入带外字节打乱 DPI 偏移计算（免 Root）"
+      description="在 SNI 切分点插入带外字节打乱 DPI 偏移计算"
+      onchange={onAutoSave}
     />
-    <Toggle
-      bind:checked={form.directBypassEnableRawFake}
-      label="Linux 内核级 Raw Socket 诱饵包（badsum / badseq）"
-      description="需要 looma-helper 具备 CAP_NET_RAW；无权限时自动无感降级到免 Root 乱序+OOB"
-    />
+    {#if platformUI.showLinuxRawFake}
+      <Toggle
+        bind:checked={form.directBypassEnableRawFake}
+        label="Linux 内核级 Raw Socket 诱饵包（badsum / badseq）"
+        description="需要 looma-helper 具备 CAP_NET_RAW；无权限时自动无感降级到免 Root 乱序+OOB"
+        onchange={onAutoSave}
+      />
+    {/if}
     <Toggle
       bind:checked={form.directBypassHttpMixHostCase}
       label="明文 HTTP Host 大小写混淆"
       description="对 80 端口等明文 HTTP 请求改写 Host 头并分片"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassEnableECH}
       label="启用 DoH HTTPS 记录（Type 65）与 ECH 支持"
       description="查询并透传 HTTPS RR 中的 ECH 参数，免装证书支持加密 SNI"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassAutoLearn}
       label="按域名自动记忆最优策略"
       description="优先使用该域名实测通过的策略，连续失败自动回退"
+      onchange={onAutoSave}
     />
     <Toggle
       bind:checked={form.directBypassDoHDisableSNI}
       label="DoH 连接禁用 SNI"
       description="访问静态 IP DoH 时省略明文 SNI，防止 DoH 自身被干扰"
+      onchange={onAutoSave}
     />
   </div>
 

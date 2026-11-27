@@ -93,3 +93,19 @@ describe("config_state round-trip serialization (UI-AC-06)", () => {
     ]);
   });
 });
+
+describe("buildConfigPayload Proxy safety", () => {
+  it("clones Proxy-wrapped rawConfig without throwing DataCloneError", () => {
+    const backing = {
+      inbound: { mode: "proxy", socks_port: 10808, http_port: 10809 },
+      routing: { direct_bypass: { preset_id: "disorder_oob" } },
+      custom_unknown_field: { nested: [1, 2, 3] },
+    };
+    const proxied = new Proxy(backing, {});
+    const form = createDefaultFormState();
+    form.inboundMode = "tun";
+    const payload = buildConfigPayload(proxied, form);
+    expect(payload.inbound.mode).toBe("tun");
+    expect(payload.custom_unknown_field).toEqual({ nested: [1, 2, 3] });
+  });
+});

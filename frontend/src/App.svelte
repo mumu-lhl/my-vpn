@@ -3,6 +3,12 @@
   import { analyzeChain } from "./lib/chain";
   import { applyTheme, type ThemeMode } from "./lib/theme";
   import {
+    detectFallbackPlatform,
+    getPlatformUIProfile,
+    normalizeRuntimePlatform,
+    type RuntimePlatform,
+  } from "./lib/platform";
+  import {
     BUILTIN_PROBE_URLS,
     buildPreviewProbeResult,
     validateProbeUrl,
@@ -23,18 +29,31 @@
   import NavSidebar, { type AppTab } from "./components/NavSidebar.svelte";
   import StatusBanners from "./components/StatusBanners.svelte";
   import DashboardTab from "./components/DashboardTab.svelte";
-  import ChainTab from "./components/ChainTab.svelte";
-  import ProtocolsTab from "./components/ProtocolsTab.svelte";
-  import RoutingTab from "./components/RoutingTab.svelte";
-  import SettingsTab from "./components/SettingsTab.svelte";
+  import SettingsTab, {
+    type SettingsSubpage,
+  } from "./components/SettingsTab.svelte";
+
+  const THEME_STORAGE_KEY = "looma_theme_mode";
+
+  function loadInitialTheme(): ThemeMode {
+    if (typeof localStorage === "undefined") return "system";
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === "light" || saved === "dark" || saved === "system") {
+      return saved;
+    }
+    return "system";
+  }
 
   let activeTab = $state<AppTab>("dashboard");
-  let themeMode = $state<ThemeMode>("system");
+  let settingsSubpage = $state<SettingsSubpage>(null);
+  let themeMode = $state<ThemeMode>(loadInitialTheme());
+  let runtimePlatform = $state<RuntimePlatform>(detectFallbackPlatform());
   let bridgeReady = $state(false);
   let rawConfig = $state<Record<string, any>>({});
   let form = $state(createDefaultFormState());
 
   let busyConnect = $state(false);
+  let switchingMode = $state(false);
   let statusError = $state("");
   let statusNotice = $state("");
   let backendWarnings = $state<Array<{ code: string; message: string }>>([]);
@@ -53,6 +72,9 @@
   let probing = $state(false);
   let probeResult = $state<ChainProbeResult | null>(null);
 
+  let debouncedSaveTimer: number | undefined;
+
+  let platformUI = $derived(getPlatformUIProfile(runtimePlatform));
   let chainInfo = $derived(analyzeChain(form.chain));
   let activeProbeURL = $derived(
     form.probeMode === "custom" && form.probeCustomURL.trim()
@@ -71,9 +93,23 @@
   const errMsg = (err: unknown) =>
     err instanceof Error ? err.message : String(err);
 
+  function selectTheme(mode: ThemeMode) {
+    themeMode = mode;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(THEME_STORAGE_KEY, mode);
+    }
+  }
+
+  function openSettingsSubpage(sub: SettingsSubpage) {
+    activeTab = "settings";
+    settingsSubpage = sub;
+  }
+
   async function persistConfig(showNotice = false): Promise<boolean> {
     if (!customProbeValid) {
-      statusError = "自定义检测地址需以 http:// 或 https:// 开头";
+      if (showNotice) {
+        statusError = "自定义检测地址需以 http:// 或 https:// 开头";
+      }
       return false;
     }
     statusError = "";
@@ -93,21 +129,31 @@
     }
   }
 
-  async function syncRuntimeState(includeConfig = false) {
-    if (!bridgeReady) return;
+  function scheduleDebouncedSave() {
+    if (debouncedSaveTimer) window.clearTimeout(debouncedSaveTimer);
+    debouncedSaveTimer = window.setTimeout(() => {
+      debouncedSaveTimer = undefined;
+      void persistConfig(false);
+    }, 400);
+  }
+
+  function flushPendingSave() {
+    if (debouncedSaveTimer) {
+      window.clearTimeout(debouncedSaveTimer);
+      debouncedSaveTimer = undefined;
+      void persistConfig(false);
+    }
+  }
+
+  // Only sync live connection status & traffic counters; NEVER overwrite form.inboundMode
+  // or user-edited fields from background polling or app resume.
+  async function syncRuntimeStats() {
+    if (!bridgeReady || document.hidden) return;
     try {
       const stats = await AppService.GetStats();
       connected = stats.running;
       upBytes = stats.up_bytes;
       downBytes = stats.down_bytes;
-      if (stats.mode === "tun" || stats.mode === "proxy") {
-        form.inboundMode = stats.mode;
-      }
-      if (includeConfig) {
-        const cfg = await AppService.GetConfig();
-        rawConfig = cfg;
-        form = hydrateFormState(cfg, form);
-      }
     } catch {
       // Ignore transient poll errors while backend is restarting.
     }
@@ -129,7 +175,7 @@
   }
 
   async function toggleConnect() {
-    if (busyConnect) return;
+    if (busyConnect || switchingMode) return;
     busyConnect = true;
     statusError = "";
     statusNotice = "";
@@ -156,10 +202,40 @@
     }
   }
 
+  // Persists inboundMode immediately; if currently connected, disconnects and reconnects
+  // cleanly in the new mode without losing user selection.
   async function setInboundMode(mode: "proxy" | "tun") {
-    if (form.inboundMode === mode) return;
+    if (form.inboundMode === mode || switchingMode) return;
+    const prevMode = form.inboundMode;
     form.inboundMode = mode;
-    await persistConfig(false);
+    statusError = "";
+    statusNotice = "";
+
+    if (!bridgeReady) {
+      return;
+    }
+
+    if (connected) {
+      switchingMode = true;
+      try {
+        await AppService.SwitchInboundMode(mode);
+        const cfg = await AppService.GetConfig();
+        rawConfig = cfg;
+        await syncRuntimeStats();
+        statusNotice = `已切换至${mode === "tun" ? platformUI.tunBadgeLabel : "本地代理"}并重连`;
+      } catch (err) {
+        form.inboundMode = prevMode;
+        statusError = `切换模式失败：${errMsg(err)}`;
+      } finally {
+        switchingMode = false;
+      }
+      return;
+    }
+
+    const ok = await persistConfig(false);
+    if (!ok) {
+      form.inboundMode = prevMode;
+    }
   }
 
   async function onToggleKillSwitch() {
@@ -174,9 +250,10 @@
 
   async function loadGephExits() {
     if (!bridgeReady) {
-      statusNotice = "连接迷雾通后即可拉取实时出口列表";
+      statusNotice = "请先在客户端连接迷雾通后再刷新实时出口列表";
       return;
     }
+    statusError = "";
     try {
       gephExits = await AppService.FetchGephExits();
       statusNotice = `已刷新 ${gephExits.length} 个可用出口`;
@@ -242,6 +319,17 @@
     applyTheme(themeMode);
   });
 
+  // Poll traffic stats ONLY while connected and visible in foreground.
+  $effect(() => {
+    if (!bridgeReady || !connected) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        void syncRuntimeStats();
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  });
+
   onMount(() => {
     applyTheme(themeMode);
     bridgeReady = hasMyGoBridge();
@@ -253,12 +341,17 @@
 
     if (bridgeReady) {
       void Promise.all([
+        AppService.GetRuntimePlatform().catch(() => ""),
         AppService.GetConfig(),
         AppService.GetStats(),
         AppService.GetLANInfo(),
         AppService.GetBuiltinProbeURLs(),
       ])
-        .then(([cfg, stats, lan, presets]) => {
+        .then(([plat, cfg, stats, lan, presets]) => {
+          const normalized = normalizeRuntimePlatform(plat);
+          if (normalized !== "unknown") {
+            runtimePlatform = normalized;
+          }
           rawConfig = cfg;
           form = hydrateFormState(cfg, form);
           connected = stats.running;
@@ -274,19 +367,19 @@
         });
     }
 
-    const onWindowFocus = () => void syncRuntimeState(true);
     const onVisibility = () => {
-      if (!document.hidden) void syncRuntimeState(true);
+      if (document.hidden) {
+        flushPendingSave();
+      } else {
+        void syncRuntimeStats();
+      }
     };
-    window.addEventListener("focus", onWindowFocus);
     document.addEventListener("visibilitychange", onVisibility);
 
-    const timer = window.setInterval(() => void syncRuntimeState(false), 1500);
     return () => {
+      flushPendingSave();
       mq.removeEventListener("change", onThemeChange);
-      window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(timer);
     };
   });
 </script>
@@ -297,8 +390,13 @@
   <NavSidebar
     {activeTab}
     {themeMode}
-    onSelectTab={(tab) => (activeTab = tab)}
-    onSelectTheme={(mode) => (themeMode = mode)}
+    onSelectTab={(tab) => {
+      activeTab = tab;
+      if (tab === "settings") {
+        settingsSubpage = null;
+      }
+    }}
+    onSelectTheme={selectTheme}
   />
 
   <main class="mx-auto w-full max-w-4xl flex-1 space-y-4 p-4 md:p-6">
@@ -312,55 +410,50 @@
     {#if activeTab === "dashboard"}
       <DashboardTab
         {form}
+        {platformUI}
         {connected}
         {busyConnect}
+        {switchingMode}
         {lanIP}
         {upBytes}
         {downBytes}
         {chainInfo}
+        {sortedExternalNodes}
         {backendWarnings}
         {activeProbeURL}
         {probing}
         {probeResult}
         onToggleConnect={toggleConnect}
         onSetInboundMode={setInboundMode}
+        onChainChange={() => void persistConfig(false)}
         onAllowLANChange={() => void persistConfig(false)}
         onKillSwitchChange={() => void onToggleKillSwitch()}
+        onOpenAndroidVpnSettings={openAndroidVpnSettings}
+        onOpenSettingsSubpage={(sub) => openSettingsSubpage(sub)}
         onRunProbe={runProbe}
       />
-    {:else if activeTab === "chain"}
-      <ChainTab
-        bind:chain={form.chain}
-        {chainInfo}
-        {sortedExternalNodes}
-        onSave={() => void persistConfig(true)}
-        onGoProtocols={() => (activeTab = "protocols")}
-      />
-    {:else if activeTab === "protocols"}
-      <ProtocolsTab
+    {:else}
+      <SettingsTab
         {form}
+        {platformUI}
+        subpage={settingsSubpage}
+        {bridgeReady}
+        {builtinProbePresets}
+        {customProbeValid}
+        {themeMode}
         {gephExits}
         bind:subName
         bind:subURL
         {sortedExternalNodes}
         {testingNodes}
-        onLoadGephExits={loadGephExits}
+        onSelectSubpage={(sub) => (settingsSubpage = sub)}
+        onAutoSave={() => void persistConfig(false)}
+        onDebouncedAutoSave={scheduleDebouncedSave}
         onSave={() => void persistConfig(true)}
+        onSetTheme={selectTheme}
+        onLoadGephExits={loadGephExits}
         onImportSub={importSub}
         onTestAllNodes={testAllNodes}
-      />
-    {:else if activeTab === "routing"}
-      <RoutingTab {form} onSave={() => void persistConfig(true)} />
-    {:else}
-      <SettingsTab
-        {form}
-        {bridgeReady}
-        {builtinProbePresets}
-        {customProbeValid}
-        {themeMode}
-        onAutoSave={() => void persistConfig(false)}
-        onSave={() => void persistConfig(true)}
-        onSetTheme={(mode) => (themeMode = mode)}
         onOpenAndroidVpnSettings={openAndroidVpnSettings}
       />
     {/if}

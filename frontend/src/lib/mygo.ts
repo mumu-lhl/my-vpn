@@ -116,9 +116,12 @@ async function callGo<T>(method: string, ...args: unknown[]): Promise<T> {
 }
 
 export const AppService = {
+  GetRuntimePlatform: () => callGo<string>("AppService.GetRuntimePlatform"),
   GetConfig: () => callGo<Record<string, any>>("AppService.GetConfig"),
   SaveConfig: (cfg: Record<string, any>) =>
     callGo<void>("AppService.SaveConfig", cfg),
+  SwitchInboundMode: (mode: "proxy" | "tun") =>
+    callGo<void>("AppService.SwitchInboundMode", mode),
   Connect: () =>
     callGo<{ warnings?: Array<{ code: string; message: string }> }>(
       "AppService.Connect",
