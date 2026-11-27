@@ -13,7 +13,10 @@ class AndroidNetPlugin : MyGoPlugin {
     override fun call(method: String, args: JSONObject, reply: PluginReply) {
         when (method) {
             "prepareAndStart" -> {
-                val activity = PluginHost.activity
+                val activity = PluginHost.activity ?: run {
+                    reply.failure(PluginFailure("NoActivity", "No active activity available"))
+                    return
+                }
                 val prepareIntent = VpnService.prepare(activity)
                 val startService = {
                     val intent = Intent(activity, NetLinkService::class.java).apply {
@@ -42,11 +45,11 @@ class AndroidNetPlugin : MyGoPlugin {
             }
 
             "stop" -> {
-                val activity = PluginHost.activity
-                val intent = Intent(activity, NetLinkService::class.java).apply {
+                val ctx = PluginHost.context
+                val intent = Intent(ctx, NetLinkService::class.java).apply {
                     action = NetLinkService.ACTION_STOP
                 }
-                activity.startService(intent)
+                ctx.startService(intent)
                 reply.success(JSONObject().put("stopped", true))
             }
 
@@ -59,9 +62,9 @@ class AndroidNetPlugin : MyGoPlugin {
             }
 
             "listInstalledApps" -> {
-                val activity = PluginHost.activity
-                val selfPkg = activity.packageName
-                val pm = activity.packageManager
+                val ctx = PluginHost.context
+                val selfPkg = ctx.packageName
+                val pm = ctx.packageManager
                 // Query PackageManager off the UI thread to keep the WebView responsive on devices with many apps.
                 Thread {
                     try {
@@ -88,13 +91,9 @@ class AndroidNetPlugin : MyGoPlugin {
                                     .put("installer_package", installer)
                             )
                         }
-                        activity.runOnUiThread {
-                            reply.success(JSONObject().put("apps", arr))
-                        }
+                        reply.success(JSONObject().put("apps", arr))
                     } catch (e: Exception) {
-                        activity.runOnUiThread {
-                            reply.failure(PluginFailure("ListAppsFailed", e.message ?: "Failed to list installed apps"))
-                        }
+                        reply.failure(PluginFailure("ListAppsFailed", e.message ?: "Failed to list installed apps"))
                     }
                 }.start()
             }
@@ -103,7 +102,7 @@ class AndroidNetPlugin : MyGoPlugin {
                 val intent = Intent(Settings.ACTION_VPN_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                PluginHost.activity.startActivity(intent)
+                PluginHost.context.startActivity(intent)
                 reply.success(JSONObject().put("opened", true))
             }
 

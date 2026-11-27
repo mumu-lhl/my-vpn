@@ -13,11 +13,7 @@
   import type { ThemeMode } from "../lib/theme";
 
   export type AppTab =
-    | "dashboard"
-    | "chain"
-    | "protocols"
-    | "routing"
-    | "settings";
+    "dashboard" | "chain" | "protocols" | "routing" | "settings";
 
   interface Props {
     activeTab: AppTab;

@@ -6,12 +6,13 @@ on:
       - 'v*'
   schedule:
     - cron: '23 19 * * *' # 03:23 UTC+8
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  group: release-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || github.ref }}
   cancel-in-progress: false
 
 env:
@@ -25,25 +26,27 @@ jobs:
       nightly-exists: ${{ steps.plan.outputs.nightly-exists }}
     steps:
       - id: plan
-        name: Skip commits already released as a nightly
+        name: Plan nightly or release build
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == 'schedule' ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == 'schedule' || "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
             status=$(curl --silent --show-error --output "$RUNNER_TEMP/nightly.json" \
               --write-out '%{http_code}' --header "Authorization: Bearer $GH_TOKEN" \
               "$GITHUB_API_URL/repos/$GH_REPO/releases/tags/nightly")
             case "$status" in
               200)
                 echo 'nightly-exists=true' >> "$GITHUB_OUTPUT"
-                refs=$(gh api "repos/$GH_REPO/git/matching-refs/tags/nightly")
-                published_sha=$(jq -r 'first(.[] | select(.ref == "refs/tags/nightly") | .object.sha) // empty' <<< "$refs")
-                if [[ "$published_sha" == "$GITHUB_SHA" ]]; then
-                  echo "Nightly already published for $GITHUB_SHA; skipping builds."
-                  echo 'build=false' >> "$GITHUB_OUTPUT"
-                  exit 0
+                if [[ "$GITHUB_EVENT_NAME" == 'schedule' ]]; then
+                  refs=$(gh api "repos/$GH_REPO/git/matching-refs/tags/nightly")
+                  published_sha=$(jq -r 'first(.[] | select(.ref == "refs/tags/nightly") | .object.sha) // empty' <<< "$refs")
+                  if [[ "$published_sha" == "$GITHUB_SHA" ]]; then
+                    echo "Nightly already published for $GITHUB_SHA; skipping builds."
+                    echo 'build=false' >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
                 fi
                 if jq --exit-status '.immutable == true' "$RUNNER_TEMP/nightly.json" >/dev/null; then
                   echo "::error::The nightly prerelease is immutable and cannot be updated."
@@ -109,15 +112,33 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.4'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Setup Android NDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Resolve Android NDK
+        shell: bash
+        run: |
+          ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}"
+          if [[ -z "$ndk" || ! -d "$ndk" ]]; then
+            sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+            if [[ -n "$sdk" && -d "$sdk/ndk" ]]; then
+              ndk=$(find "$sdk/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+            fi
+          fi
+          if [[ -z "$ndk" || ! -d "$ndk" ]]; then
+            yes | sdkmanager --licenses >/dev/null || true
+            ndk_pkg=$(sdkmanager --list | awk '/ndk;/{print $1}' | sort -V | tail -n 1)
+            sdkmanager --install "$ndk_pkg"
+            ndk="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}/ndk/${ndk_pkg#ndk;}"
+          fi
+          echo "Using Android NDK: $ndk"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
       - name: Setup Rust Android toolchain and cargo-ndk
         run: |
           rustup target add aarch64-linux-android
@@ -151,7 +172,11 @@ jobs:
           trap 'rm -f -- "$ANDROID_KEYSTORE_PATH"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
           unset ANDROID_KEYSTORE_BASE64
-          go run "github.com/egoist/mygo/cmd/mygo@${MYGO_COMMIT}" build -platform android/arm64
+          version_args=()
+          if [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == refs/tags/v* ]]; then
+            version_args=(-version "$GITHUB_REF_NAME")
+          fi
+          go run "github.com/egoist/mygo/cmd/mygo@${MYGO_COMMIT}" build -platform android/arm64 "${version_args[@]}"
           apk=$(ls build/android/*.apk | head -n 1)
           unzip -l "$apk" | grep -q 'lib/arm64-v8a/libgeph5.so' || {
             echo "::error::libgeph5.so missing from built APK: $apk"
@@ -165,7 +190,7 @@ jobs:
 
   publish-nightly:
     needs: [prepare, build-linux, build-android]
-    if: github.event_name == 'schedule' && needs.prepare.outputs.build == 'true'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -215,7 +240,7 @@ jobs:
 
   publish-release:
     needs: [prepare, build-linux, build-android]
-    if: startsWith(github.ref, 'refs/tags/v') && needs.prepare.outputs.build == 'true'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -248,4 +273,8 @@ jobs:
           for asset in "${assets[@]}"; do
             test -s "$asset" || { echo "::error::Missing or empty release asset: $asset"; exit 1; }
           done
-          gh release create "$TAG_NAME" --generate-notes "${assets[@]}"
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" --clobber "${assets[@]}"
+          else
+            gh release create "$TAG_NAME" --generate-notes "${assets[@]}"
+          fi

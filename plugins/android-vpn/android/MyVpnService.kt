@@ -80,11 +80,7 @@ class NetLinkService : VpnService() {
             builder.addRoute("::", 0)
         }
 
-        // Exclude self package to prevent routing loops for Go core + libgeph5.so sidecar
-        try {
-            builder.addDisallowedApplication(packageName)
-        } catch (_: Exception) {}
-
+        // VpnService.Builder forbids mixing addAllowedApplication and addDisallowedApplication.
         when (perAppMode) {
             "whitelist" -> {
                 for (pkg in packages) {
@@ -94,9 +90,13 @@ class NetLinkService : VpnService() {
                 }
             }
             "blacklist" -> {
+                try { builder.addDisallowedApplication(packageName) } catch (_: Exception) {}
                 for (pkg in packages) {
                     try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {}
                 }
+            }
+            else -> {
+                try { builder.addDisallowedApplication(packageName) } catch (_: Exception) {}
             }
         }
 
@@ -108,7 +108,7 @@ class NetLinkService : VpnService() {
 
         tunInterface = builder.establish()
         val fd = tunInterface?.fd ?: -1
-        PluginHost.emit("android-netlink", "tun_ready", JSONObject().put("fd", fd))
+        PluginHost.emit("android_netlink", "tun_ready", JSONObject().put("fd", fd))
     }
 
     private fun registerNetworkMonitor() {
@@ -120,10 +120,10 @@ class NetLinkService : VpnService() {
             .build()
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                PluginHost.emit("android-netlink", "network_changed", JSONObject().put("state", "available"))
+                PluginHost.emit("android_netlink", "network_changed", JSONObject().put("state", "available"))
             }
             override fun onLost(network: Network) {
-                PluginHost.emit("android-netlink", "network_changed", JSONObject().put("state", "lost"))
+                PluginHost.emit("android_netlink", "network_changed", JSONObject().put("state", "lost"))
             }
         }
         networkCallback = cb
@@ -136,7 +136,7 @@ class NetLinkService : VpnService() {
         networkCallback = null
         tunInterface?.close()
         tunInterface = null
-        PluginHost.emit("android-netlink", "tun_stopped", JSONObject())
+        PluginHost.emit("android_netlink", "tun_stopped", JSONObject())
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         instance = null

@@ -1,6 +1,6 @@
 {
   "mobile": {
-    "id": "android-netlink",
+    "id": "android_netlink",
     "android": {
       "sources": ["android/*.kt"],
       "class": "AndroidNetPlugin",
