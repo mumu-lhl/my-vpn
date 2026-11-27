@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/mumu-lhl/my-vpn/internal/config"
 	"github.com/mumu-lhl/my-vpn/internal/core"
 	"github.com/mumu-lhl/my-vpn/internal/ipc"
@@ -118,4 +119,13 @@ func freePort(t *testing.T) int {
 	}
 	defer ln.Close()
 	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func TestMyGoBindAppService(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+	// Ensures every exported method on AppService is JSON-bindable by mygo.Bind.
+	mygo.Bind(svc)
 }

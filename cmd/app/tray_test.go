@@ -89,7 +89,7 @@ func TestAppServiceStateSyncModeSwitchAndShutdown(t *testing.T) {
 	}
 
 	var notifications atomic.Int32
-	svc.SetOnStateChange(func() {
+	svc.setOnStateChange(func() {
 		notifications.Add(1)
 	})
 

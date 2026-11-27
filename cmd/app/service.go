@@ -52,9 +52,9 @@ func NewAppService(dataDir string) (*AppService, error) {
 	}, nil
 }
 
-// SetOnStateChange registers a callback invoked after connection or config
+// setOnStateChange registers a callback invoked after connection or config
 // changes so the desktop SNI tray stays synchronized with frontend actions.
-func (s *AppService) SetOnStateChange(fn func()) {
+func (s *AppService) setOnStateChange(fn func()) {
 	s.mu.Lock()
 	s.onStateChange = fn
 	s.mu.Unlock()

@@ -83,7 +83,7 @@ func main() {
 				log.Printf("looma: SNI tray unavailable (install libayatana-appindicator3 for tray residency): %v", err)
 			} else {
 				trayCtrl = tc
-				svc.SetOnStateChange(tc.Sync)
+				svc.setOnStateChange(tc.Sync)
 			}
 		}
 		openMain()

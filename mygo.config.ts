@@ -7,7 +7,7 @@ export default {
   devCommand: "bun run --cwd frontend dev",
   buildCommand: "bun run --cwd frontend build",
   frontendDist: "frontend/dist",
-  bindings: "frontend/src/lib/mygo.ts",
+  bindings: ".mygo/mygo.generated.ts",
   out: "build",
   android: {
     abis: ["arm64"],
