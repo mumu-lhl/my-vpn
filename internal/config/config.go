@@ -183,10 +183,24 @@ type CustomRule struct {
 type DirectBypassConfig struct {
 	EnableDefaultPreset bool     `json:"enable_default_preset"`
 	Scope               string   `json:"scope"` // "global" (all non-CN/private) or "list" (preset + custom rules only)
+	PresetID            string   `json:"preset_id,omitempty"`
+	SplitAtSNI          bool     `json:"split_at_sni"`
+	MixSNICase          bool     `json:"mix_sni_case"`
+	SplitCount          int      `json:"split_count,omitempty"`
 	TLSFragmentSize     string   `json:"tls_fragment_size"`
 	TLSFragmentSleep    string   `json:"tls_fragment_sleep"`
 	TLSRecordFragment   bool     `json:"tls_record_fragment"`
+	EnableDisorder      bool     `json:"enable_disorder"`
+	EnableOOB           bool     `json:"enable_oob"`
+	EnableFakeTTL       bool     `json:"enable_fake_ttl"`
+	FakeTTL             int      `json:"fake_ttl,omitempty"`
+	EnableRawFake       bool     `json:"enable_raw_fake"`
+	RawBadSum           bool     `json:"raw_bad_sum"`
+	RawBadSeq           bool     `json:"raw_bad_seq"`
 	HTTPMixHostCase     bool     `json:"http_mix_host_case"`
+	QUICMode            string   `json:"quic_mode,omitempty"` // "fake", "block", "pass"
+	EnableECH           bool     `json:"enable_ech"`
+	AutoLearnPerDomain  bool     `json:"auto_learn_per_domain"`
 	DoHURL              string   `json:"doh_url,omitempty"`
 	DoHStaticIPs        []string `json:"doh_static_ips,omitempty"`
 	DoHDisableSNI       bool     `json:"doh_disable_sni"`
@@ -274,10 +288,22 @@ func DefaultConfig() *AppConfig {
 			DirectBypass: DirectBypassConfig{
 				EnableDefaultPreset: true,
 				Scope:               DirectBypassScopeGlobal,
+				PresetID:            "disorder_oob",
+				SplitAtSNI:          true,
+				MixSNICase:          true,
+				SplitCount:          3,
 				TLSFragmentSize:     "10-30",
 				TLSFragmentSleep:    "2-8ms",
 				TLSRecordFragment:   true,
+				EnableDisorder:      true,
+				EnableOOB:           true,
+				FakeTTL:             4,
+				RawBadSum:           true,
+				RawBadSeq:           true,
 				HTTPMixHostCase:     true,
+				QUICMode:            "fake",
+				EnableECH:           true,
+				AutoLearnPerDomain:  true,
 				DoHDisableSNI:       true,
 			},
 			RuleSetUpdateHours: 24,
@@ -337,6 +363,9 @@ func (c *AppConfig) Validate() error {
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("invalid probe URL: %s", raw)
 		}
+	}
+	if qm := strings.TrimSpace(c.Routing.DirectBypass.QUICMode); qm != "" && qm != "fake" && qm != "block" && qm != "pass" {
+		return fmt.Errorf("invalid direct_bypass.quic_mode: %s", qm)
 	}
 	if scope := strings.TrimSpace(c.Routing.DirectBypass.Scope); scope != "" && scope != DirectBypassScopeGlobal && scope != DirectBypassScopeList {
 		return fmt.Errorf("invalid direct_bypass.scope: %s", scope)
