@@ -191,29 +191,49 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 		}
 	}
 
-	hop1UDP, hop1IPv6, err := buildHop(cfg.Chain.Hop1, "hop-1", "", false)
-	if err != nil {
-		return nil, fmt.Errorf("build hop1: %w", err)
-	}
+	isServerlessBypass := cfg.Chain.Hop1.Kind == config.HopDirectBypass
+	var finalTag string
+	var chainUDP, chainIPv6 bool
+	effectiveTwoHop := cfg.Chain.TwoHop && !isServerlessBypass
 
-	finalTag := "hop-1"
-	chainUDP := hop1UDP
-	chainIPv6 := hop1IPv6
-
-	if cfg.Chain.TwoHop {
-		forceH2 := !hop1UDP && cfg.Chain.Hop2.Kind == config.HopWarp
-		hop2UDP, hop2IPv6, err := buildHop(cfg.Chain.Hop2, "hop-2", "hop-1", forceH2)
-		if err != nil {
-			return nil, fmt.Errorf("build hop2: %w", err)
+	if isServerlessBypass {
+		if cfg.Chain.TwoHop {
+			warnings = append(warnings, CompileWarning{
+				Code:    "DIRECT_BYPASS_SINGLE_HOP",
+				Message: "直连绕过（无服务器）模式不支持双跳，已自动按单跳直连绕过编译。",
+			})
 		}
-		finalTag = "hop-2"
-		// If Hop 2 is WARP over MASQUE H2 (IP-in-HTTP/2), WARP itself carries UDP inside TCP H2!
-		if forceH2 {
-			chainUDP = true
+		if cfg.Routing.DirectBypass.Scope == config.DirectBypassScopeList {
+			finalTag = "direct"
 		} else {
-			chainUDP = hop1UDP && hop2UDP
+			finalTag = "direct-bypass"
 		}
-		chainIPv6 = hop2IPv6
+		chainUDP = true
+		chainIPv6 = true
+	} else {
+		hop1UDP, hop1IPv6, err := buildHop(cfg.Chain.Hop1, "hop-1", "", false)
+		if err != nil {
+			return nil, fmt.Errorf("build hop1: %w", err)
+		}
+		finalTag = "hop-1"
+		chainUDP = hop1UDP
+		chainIPv6 = hop1IPv6
+
+		if effectiveTwoHop {
+			forceH2 := !hop1UDP && cfg.Chain.Hop2.Kind == config.HopWarp
+			hop2UDP, hop2IPv6, err := buildHop(cfg.Chain.Hop2, "hop-2", "hop-1", forceH2)
+			if err != nil {
+				return nil, fmt.Errorf("build hop2: %w", err)
+			}
+			finalTag = "hop-2"
+			// If Hop 2 is WARP over MASQUE H2 (IP-in-HTTP/2), WARP itself carries UDP inside TCP H2!
+			if forceH2 {
+				chainUDP = true
+			} else {
+				chainUDP = hop1UDP && hop2UDP
+			}
+			chainIPv6 = hop2IPv6
+		}
 	}
 
 	fragSize := cfg.Routing.DirectBypass.TLSFragmentSize
@@ -262,7 +282,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	hop1ProbePort := 0
-	if cfg.Chain.TwoHop {
+	if effectiveTwoHop {
 		hop1ProbePort = cfg.Probe.Hop1ProbePort
 		if hop1ProbePort <= 0 {
 			hop1ProbePort = 10810
@@ -292,11 +312,19 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 		inbounds = append(inbounds, tunIn)
 	}
 
+	proxyDNSAddr := cfg.DNS.ProxyDNS
+	proxyDNSDetour := finalTag
+	if isServerlessBypass {
+		if cfg.Routing.DirectBypass.DoHURL != "" {
+			proxyDNSAddr = cfg.Routing.DirectBypass.DoHURL
+		}
+		proxyDNSDetour = "direct-bypass"
+	}
 	dnsServers := []map[string]any{
 		{
 			"tag":     "dns-proxy",
-			"address": cfg.DNS.ProxyDNS,
-			"detour":  finalTag,
+			"address": proxyDNSAddr,
+			"detour":  proxyDNSDetour,
 		},
 		{
 			"tag":     "dns-direct",
@@ -359,7 +387,7 @@ func CompileSingBoxConfig(cfg *config.AppConfig, tunFD int) (*CompileResult, err
 	}
 
 	routeBlock := routing.CompileRoute(cfg.Routing, cfg.DNS, cfg.Inbound.AllowLAN, finalTag, chainUDP, chainIPv6)
-	if cfg.Chain.TwoHop {
+	if effectiveTwoHop {
 		if rules, ok := routeBlock["rules"].([]map[string]any); ok {
 			probeRule := map[string]any{
 				"inbound":  []string{"hop1-probe-in"},

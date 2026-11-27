@@ -20,12 +20,18 @@
     onGoProtocols,
   }: Props = $props();
 
+  let isDirectBypass = $derived(chain.hop1.kind === "direct_bypass");
+
   function setHop(which: "hop1" | "hop2", kind: string) {
     const nextKind = kind as HopKind;
     const defaultNodeId =
       nextKind === "external" ? sortedExternalNodes[0]?.id : undefined;
     chain = {
       ...chain,
+      two_hop:
+        which === "hop1" && nextKind === "direct_bypass"
+          ? false
+          : chain.two_hop,
       [which]: { kind: nextKind, node_id: defaultNodeId },
     };
   }
@@ -45,7 +51,7 @@
     <div>
       <h2 class="text-base font-semibold">代理链路编排</h2>
       <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-        支持单跳直出或两跳链式转发，例如前置破壁叠加落地出口
+        支持无服务器直连绕过、单跳直出或两跳链式转发
       </p>
     </div>
     <button
@@ -58,23 +64,26 @@
     </button>
   </div>
 
-  <Toggle
-    bind:checked={chain.two_hop}
-    label="启用二级链式代理"
-    description="流量先经第一跳，再由第二跳落地访问目标网站"
-  />
+  {#if !isDirectBypass}
+    <Toggle
+      bind:checked={chain.two_hop}
+      label="启用二级链式代理"
+      description="流量先经第一跳，再由第二跳落地访问目标网站"
+    />
+  {/if}
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="space-y-2">
       <label class="flex flex-col gap-1.5 text-sm">
         <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-          第一跳（前置）
+          {isDirectBypass ? "工作模式" : "第一跳（前置）"}
         </span>
         <select
           class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
           value={chain.hop1.kind}
           onchange={(e) => setHop("hop1", e.currentTarget.value)}
         >
+          <option value="direct_bypass">直连绕过（无服务器 · 防干扰）</option>
           <option value="geph">迷雾通 (Geph5)</option>
           <option value="psiphon">赛风 (Psiphon · 仅 TCP)</option>
           <option value="warp">Cloudflare WARP</option>
@@ -106,7 +115,7 @@
       {/if}
     </div>
 
-    {#if chain.two_hop}
+    {#if chain.two_hop && !isDirectBypass}
       <div class="space-y-2">
         <label class="flex flex-col gap-1.5 text-sm">
           <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
@@ -149,6 +158,16 @@
       </div>
     {/if}
   </div>
+
+  {#if isDirectBypass}
+    <p
+      class="rounded-lg bg-zinc-50 px-3 py-2.5 text-xs text-zinc-600 dark:bg-zinc-800/70 dark:text-zinc-300"
+    >
+      无需任何远程服务器或账号。连接后通过静态 IP DoH 解析与 TLS/HTTP
+      分片混淆直连目标站点，适用于仅受 DNS/SNI 干扰而 IP
+      未被封锁的网站。可在「路由与 DNS」中切换作用范围及微调分片与 DoH 参数。
+    </p>
+  {/if}
 
   {#if chainInfo.warning}
     <p

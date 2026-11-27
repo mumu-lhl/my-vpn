@@ -223,7 +223,7 @@ func Evaluate(rc config.RoutingConfig, dns config.DNSConfig, q MatchQuery, chain
 	if rc.DirectBypass.EnableDefaultPreset && matchesDomainSuffix(q.Domain, DefaultDirectBypassDomains) {
 		return "direct-bypass"
 	}
-	if rc.BypassCN && (strings.HasSuffix(strings.ToLower(q.Domain), ".cn") || strings.EqualFold(q.Domain, "baidu.com") || strings.HasSuffix(strings.ToLower(q.Domain), ".baidu.com")) {
+	if rc.BypassCN && isCommonCNDomain(q.Domain) {
 		return "direct"
 	}
 	if dns.RejectNonDirectUDPWhenTCPOnly && !chainSupportsUDP && strings.EqualFold(q.Network, "udp") {
@@ -235,6 +235,23 @@ func Evaluate(rc config.RoutingConfig, dns config.DNSConfig, q MatchQuery, chain
 		}
 	}
 	return "proxy"
+}
+
+var commonCNDomainSuffixes = []string{
+	"baidu.com", "qq.com", "taobao.com", "tmall.com", "jd.com",
+	"alipay.com", "bilibili.com", "zhihu.com", "weibo.com", "163.com",
+	"douyin.com", "meituan.com", "mi.com", "huawei.com", "aliyun.com",
+}
+
+func isCommonCNDomain(d string) bool {
+	ld := strings.ToLower(strings.TrimSpace(d))
+	if ld == "" {
+		return false
+	}
+	if strings.HasSuffix(ld, ".cn") {
+		return true
+	}
+	return matchesDomainSuffix(ld, commonCNDomainSuffixes)
 }
 
 func isCommonAdDomain(d string) bool {

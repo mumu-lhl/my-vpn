@@ -2,6 +2,8 @@ import type { ChainConfig, HopKind } from "./chain";
 import type { ExternalNode } from "./mygo";
 import { BUILTIN_PROBE_URLS } from "./probe";
 
+export type DirectBypassScope = "global" | "list";
+
 export interface AppFormState {
   inboundMode: "proxy" | "tun";
   allowLAN: boolean;
@@ -20,6 +22,14 @@ export interface AppFormState {
   bypassPrivate: boolean;
   blockAds: boolean;
   directBypass: boolean;
+  directBypassScope: DirectBypassScope;
+  directBypassFragmentSize: string;
+  directBypassFragmentSleep: string;
+  directBypassRecordFragment: boolean;
+  directBypassHttpMixHostCase: boolean;
+  directBypassDoHURL: string;
+  directBypassDoHStaticIPs: string;
+  directBypassDoHDisableSNI: boolean;
   fakeIP: boolean;
   directDNS: string;
   proxyDNS: string;
@@ -56,6 +66,14 @@ export function createDefaultFormState(): AppFormState {
     bypassPrivate: true,
     blockAds: true,
     directBypass: true,
+    directBypassScope: "global",
+    directBypassFragmentSize: "10-30",
+    directBypassFragmentSleep: "2-8ms",
+    directBypassRecordFragment: true,
+    directBypassHttpMixHostCase: true,
+    directBypassDoHURL: "",
+    directBypassDoHStaticIPs: "",
+    directBypassDoHDisableSNI: true,
     fakeIP: true,
     directDNS: "https://dns.alidns.com/dns-query",
     proxyDNS: "https://1.1.1.1/dns-query",
@@ -93,10 +111,12 @@ export function hydrateFormState(
     next.killSwitch = Boolean(cfg.inbound.kill_switch);
   }
   if (cfg.chain) {
+    const hop1Kind = (cfg.chain.hop1?.kind ?? "geph") as HopKind;
     next.chain = {
-      two_hop: Boolean(cfg.chain.two_hop),
+      two_hop:
+        hop1Kind === "direct_bypass" ? false : Boolean(cfg.chain.two_hop),
       hop1: {
-        kind: (cfg.chain.hop1?.kind ?? "geph") as HopKind,
+        kind: hop1Kind,
         node_id: cfg.chain.hop1?.node_id,
       },
       hop2: {
@@ -122,9 +142,18 @@ export function hydrateFormState(
     next.bypassCN = Boolean(cfg.routing.bypass_cn);
     next.bypassPrivate = Boolean(cfg.routing.bypass_private ?? true);
     next.blockAds = Boolean(cfg.routing.block_ads);
-    next.directBypass = Boolean(
-      cfg.routing.direct_bypass?.enable_default_preset ?? true,
-    );
+    const db = cfg.routing.direct_bypass;
+    next.directBypass = Boolean(db?.enable_default_preset ?? true);
+    next.directBypassScope = db?.scope === "list" ? "list" : "global";
+    next.directBypassFragmentSize = db?.tls_fragment_size || "10-30";
+    next.directBypassFragmentSleep = db?.tls_fragment_sleep || "2-8ms";
+    next.directBypassRecordFragment = Boolean(db?.tls_record_fragment ?? true);
+    next.directBypassHttpMixHostCase = Boolean(db?.http_mix_host_case ?? true);
+    next.directBypassDoHURL = db?.doh_url ?? "";
+    next.directBypassDoHStaticIPs = Array.isArray(db?.doh_static_ips)
+      ? db.doh_static_ips.join(", ")
+      : "";
+    next.directBypassDoHDisableSNI = Boolean(db?.doh_disable_sni ?? true);
   }
   if (cfg.dns) {
     next.directDNS = cfg.dns.direct_dns ?? next.directDNS;
@@ -157,6 +186,10 @@ export function buildConfigPayload(
   form: AppFormState,
 ): Record<string, any> {
   const base = structuredClone(rawConfig);
+  const dohStaticIPs = form.directBypassDoHStaticIPs
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   return {
     ...base,
     inbound: {
@@ -168,7 +201,8 @@ export function buildConfigPayload(
       kill_switch: form.killSwitch,
     },
     chain: {
-      two_hop: form.chain.two_hop,
+      two_hop:
+        form.chain.hop1.kind === "direct_bypass" ? false : form.chain.two_hop,
       hop1: { ...form.chain.hop1 },
       hop2: { ...form.chain.hop2 },
     },
@@ -199,6 +233,14 @@ export function buildConfigPayload(
       direct_bypass: {
         ...base.routing?.direct_bypass,
         enable_default_preset: form.directBypass,
+        scope: form.directBypassScope,
+        tls_fragment_size: form.directBypassFragmentSize.trim() || "10-30",
+        tls_fragment_sleep: form.directBypassFragmentSleep.trim() || "2-8ms",
+        tls_record_fragment: form.directBypassRecordFragment,
+        http_mix_host_case: form.directBypassHttpMixHostCase,
+        doh_url: form.directBypassDoHURL.trim(),
+        doh_static_ips: dohStaticIPs,
+        doh_disable_sni: form.directBypassDoHDisableSNI,
       },
     },
     dns: {

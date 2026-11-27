@@ -43,6 +43,8 @@ type Engine struct {
 	socksLn      net.Listener
 	httpSrv      *http.Server
 	upstreamAddr string // optional SOCKS5 upstream for loopback/sidecar chaining
+	bypassDialer *BypassDialer
+	customBypass bool
 	upBytes      atomic.Int64
 	downBytes    atomic.Int64
 }
@@ -58,6 +60,14 @@ func (e *Engine) SetUpstreamSocks(addr string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.upstreamAddr = addr
+}
+
+// SetBypassDialer injects a custom BypassDialer (used by tests to wire mock DoH/TCP peers).
+func (e *Engine) SetBypassDialer(d *BypassDialer) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.bypassDialer = d
+	e.customBypass = d != nil
 }
 
 func (e *Engine) Start(ctx context.Context, cfg *config.AppConfig, tunFD int) (*CompileResult, error) {
@@ -82,6 +92,9 @@ func (e *Engine) Start(ctx context.Context, cfg *config.AppConfig, tunFD int) (*
 
 	e.cfg = cfg
 	e.compileRes = res
+	if !e.customBypass {
+		e.bypassDialer = NewBypassDialer(cfg.Routing.DirectBypass)
+	}
 
 	if e.singboxBin != "" {
 		cmd := exec.CommandContext(ctx, e.singboxBin, "run", "-c", cfgPath)
@@ -155,7 +168,9 @@ func (e *Engine) Stats() TrafficStats {
 	mode := ""
 	if e.cfg != nil {
 		mode = string(e.cfg.Inbound.Mode)
-		if e.cfg.Chain.TwoHop {
+		if e.cfg.Chain.Hop1.Kind == config.HopDirectBypass {
+			desc = string(config.HopDirectBypass)
+		} else if e.cfg.Chain.TwoHop {
 			desc = fmt.Sprintf("%s -> %s", e.cfg.Chain.Hop1.Kind, e.cfg.Chain.Hop2.Kind)
 		} else {
 			desc = string(e.cfg.Chain.Hop1.Kind)
@@ -174,6 +189,7 @@ func (e *Engine) dialTarget(targetHost string, targetPort int) (net.Conn, error)
 	e.mu.Lock()
 	cfg := e.cfg
 	up := e.upstreamAddr
+	bd := e.bypassDialer
 	supportsUDP := true
 	if e.compileRes != nil {
 		supportsUDP = e.compileRes.ChainSupportsUDP
@@ -189,6 +205,18 @@ func (e *Engine) dialTarget(targetHost string, targetPort int) (net.Conn, error)
 		}, supportsUDP, false)
 		if action == "reject" {
 			return nil, errors.New("blocked by routing rule")
+		}
+		if cfg.Chain.Hop1.Kind == config.HopDirectBypass && action == "proxy" {
+			if cfg.Routing.DirectBypass.Scope == config.DirectBypassScopeList {
+				action = "direct"
+			} else {
+				action = "direct-bypass"
+			}
+		}
+		if action == "direct-bypass" && bd != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return bd.Dial(ctx, targetHost, targetPort)
 		}
 		if action == "direct" || up == "" {
 			return net.DialTimeout("tcp", net.JoinHostPort(targetHost, fmt.Sprintf("%d", targetPort)), 5*time.Second)

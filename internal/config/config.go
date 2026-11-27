@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
 )
@@ -9,10 +10,16 @@ import (
 type HopKind string
 
 const (
-	HopGeph     HopKind = "geph"
-	HopPsiphon  HopKind = "psiphon"
-	HopWarp     HopKind = "warp"
-	HopExternal HopKind = "external"
+	HopGeph         HopKind = "geph"
+	HopPsiphon      HopKind = "psiphon"
+	HopWarp         HopKind = "warp"
+	HopExternal     HopKind = "external"
+	HopDirectBypass HopKind = "direct_bypass"
+)
+
+const (
+	DirectBypassScopeGlobal = "global"
+	DirectBypassScopeList   = "list"
 )
 
 type InboundMode string
@@ -174,10 +181,15 @@ type CustomRule struct {
 }
 
 type DirectBypassConfig struct {
-	EnableDefaultPreset bool   `json:"enable_default_preset"`
-	TLSFragmentSize     string `json:"tls_fragment_size"`
-	TLSFragmentSleep    string `json:"tls_fragment_sleep"`
-	TLSRecordFragment   bool   `json:"tls_record_fragment"`
+	EnableDefaultPreset bool     `json:"enable_default_preset"`
+	Scope               string   `json:"scope"` // "global" (all non-CN/private) or "list" (preset + custom rules only)
+	TLSFragmentSize     string   `json:"tls_fragment_size"`
+	TLSFragmentSleep    string   `json:"tls_fragment_sleep"`
+	TLSRecordFragment   bool     `json:"tls_record_fragment"`
+	HTTPMixHostCase     bool     `json:"http_mix_host_case"`
+	DoHURL              string   `json:"doh_url,omitempty"`
+	DoHStaticIPs        []string `json:"doh_static_ips,omitempty"`
+	DoHDisableSNI       bool     `json:"doh_disable_sni"`
 }
 
 type RoutingConfig struct {
@@ -261,9 +273,12 @@ func DefaultConfig() *AppConfig {
 			BypassPrivate: true,
 			DirectBypass: DirectBypassConfig{
 				EnableDefaultPreset: true,
+				Scope:               DirectBypassScopeGlobal,
 				TLSFragmentSize:     "10-30",
 				TLSFragmentSleep:    "2-8ms",
 				TLSRecordFragment:   true,
+				HTTPMixHostCase:     true,
+				DoHDisableSNI:       true,
 			},
 			RuleSetUpdateHours: 24,
 		},
@@ -321,6 +336,24 @@ func (c *AppConfig) Validate() error {
 		u, err := url.Parse(raw)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("invalid probe URL: %s", raw)
+		}
+	}
+	if scope := strings.TrimSpace(c.Routing.DirectBypass.Scope); scope != "" && scope != DirectBypassScopeGlobal && scope != DirectBypassScopeList {
+		return fmt.Errorf("invalid direct_bypass.scope: %s", scope)
+	}
+	if rawDoH := strings.TrimSpace(c.Routing.DirectBypass.DoHURL); rawDoH != "" {
+		u, err := url.Parse(rawDoH)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("invalid direct_bypass.doh_url: %s", rawDoH)
+		}
+	}
+	for _, rawIP := range c.Routing.DirectBypass.DoHStaticIPs {
+		rawIP = strings.TrimSpace(rawIP)
+		if rawIP == "" {
+			continue
+		}
+		if _, err := netip.ParseAddr(rawIP); err != nil {
+			return fmt.Errorf("invalid direct_bypass.doh_static_ips entry: %s", rawIP)
 		}
 	}
 	return nil

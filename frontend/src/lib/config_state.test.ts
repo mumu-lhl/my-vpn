@@ -48,4 +48,48 @@ describe("config_state round-trip serialization (UI-AC-06)", () => {
     expect(payload.linux.minimize_to_tray).toBe(true);
     expect(payload.routing.bypass_private).toBe(true);
   });
+
+  it("hydrates and serializes serverless direct_bypass scope, fragmentation, and DoH fields", () => {
+    const hydrated = hydrateFormState({
+      chain: {
+        two_hop: true,
+        hop1: { kind: "direct_bypass" },
+        hop2: { kind: "warp" },
+      },
+      routing: {
+        bypass_cn: true,
+        bypass_private: true,
+        block_ads: false,
+        direct_bypass: {
+          enable_default_preset: true,
+          scope: "list",
+          tls_fragment_size: "12-24",
+          tls_fragment_sleep: "3-6ms",
+          tls_record_fragment: false,
+          http_mix_host_case: true,
+          doh_url: "https://1.0.0.1/dns-query",
+          doh_static_ips: ["1.0.0.1", "1.1.1.1"],
+          doh_disable_sni: true,
+        },
+      },
+    });
+    expect(hydrated.chain.two_hop).toBe(false);
+    expect(hydrated.chain.hop1.kind).toBe("direct_bypass");
+    expect(hydrated.directBypassScope).toBe("list");
+    expect(hydrated.directBypassDoHStaticIPs).toBe("1.0.0.1, 1.1.1.1");
+
+    const payload = buildConfigPayload({}, hydrated);
+    expect(payload.chain.two_hop).toBe(false);
+    expect(payload.routing.direct_bypass.scope).toBe("list");
+    expect(payload.routing.direct_bypass.tls_fragment_size).toBe("12-24");
+    expect(payload.routing.direct_bypass.tls_record_fragment).toBe(false);
+    expect(payload.routing.direct_bypass.http_mix_host_case).toBe(true);
+    expect(payload.routing.direct_bypass.doh_url).toBe(
+      "https://1.0.0.1/dns-query",
+    );
+    expect(payload.routing.direct_bypass.doh_static_ips).toEqual([
+      "1.0.0.1",
+      "1.1.1.1",
+    ]);
+  });
 });

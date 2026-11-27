@@ -29,4 +29,15 @@ describe("analyzeChain (AC-04)", () => {
     expect(formatBytes(2048)).toBe("2.0 KB");
     expect(formatBytes(3 * 1024 * 1024)).toBe("3.00 MB");
   });
+
+  it("formats serverless direct_bypass as single-hop without warnings", () => {
+    const res = analyzeChain({
+      two_hop: true,
+      hop1: { kind: "direct_bypass" },
+      hop2: { kind: "warp" },
+    });
+    expect(res.label).toBe("直连绕过（无服务器）");
+    expect(res.autoSwitchWarpMasqueH2).toBe(false);
+    expect(res.warning).toBeNull();
+  });
 });
