@@ -288,3 +288,10 @@ func (s *Supervisor) FetchExits(ctx context.Context, overrideURL string) ([]Exit
 	})
 	return out, nil
 }
+
+// IsRunning reports whether a geph5-client sidecar subprocess is currently active.
+func (s *Supervisor) IsRunning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cmd != nil && s.cmd.Process != nil
+}

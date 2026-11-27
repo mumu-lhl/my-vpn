@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -76,6 +77,10 @@ func (s *AppService) SetHelperSocket(sockPath string) {
 	defer s.mu.Unlock()
 	s.helperSock = sockPath
 	s.ipcClient = ipc.NewClient(sockPath)
+}
+
+func (s *AppService) GetRuntimePlatform() string {
+	return runtime.GOOS
 }
 
 func (s *AppService) GetConfig() *config.AppConfig {
@@ -415,7 +420,21 @@ func (s *AppService) TestAllNodes(ctx context.Context) []speedtest.Result {
 
 func (s *AppService) FetchGephExits(ctx context.Context) ([]geph.ExitLocation, error) {
 	cfg := s.store.Get()
-	return s.geph.FetchExits(ctx, fmt.Sprintf("http://127.0.0.1:%d", cfg.Geph.ControlPort))
+	if strings.TrimSpace(cfg.Geph.Secret) == "" {
+		return nil, fmt.Errorf("请先填写迷雾通账号 Secret 并保存")
+	}
+	if !s.geph.IsRunning() {
+		return nil, fmt.Errorf("请先在主页选择迷雾通并点击连接，连上后再刷新实时出口列表")
+	}
+	ctrlPort := cfg.Geph.ControlPort
+	if ctrlPort <= 0 {
+		ctrlPort = 19910
+	}
+	exits, err := s.geph.FetchExits(ctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort))
+	if err != nil {
+		return nil, fmt.Errorf("迷雾通控制端口暂不可达，请确认已成功连接迷雾通后再试")
+	}
+	return exits, nil
 }
 
 func (s *AppService) GetClassicCNApps() []platform.ClassicCNApp {

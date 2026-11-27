@@ -8,9 +8,10 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo"
+	"time"
+
 	"github.com/mumu-lhl/my-vpn/internal/config"
 	"github.com/mumu-lhl/my-vpn/internal/core"
 	"github.com/mumu-lhl/my-vpn/internal/ipc"
@@ -128,4 +129,19 @@ func TestMyGoBindAppService(t *testing.T) {
 	}
 	// Ensures every exported method on AppService is JSON-bindable by mygo.Bind.
 	mygo.Bind(svc)
+}
+
+func TestGetRuntimePlatformAndFriendlyGephExitError(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+	if plat := svc.GetRuntimePlatform(); plat == "" {
+		t.Fatalf("expected non-empty runtime platform")
+	}
+	// Without Geph secret, FetchGephExits must return a friendly message (never raw 127.0.0.1:19910).
+	_, err = svc.FetchGephExits(context.Background())
+	if err == nil || strings.Contains(err.Error(), "19910") {
+		t.Fatalf("expected friendly error without raw 19910 port, got: %v", err)
+	}
 }
