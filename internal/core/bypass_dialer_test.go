@@ -207,6 +207,7 @@ func TestServerlessBypassEngineLoopbackWithMockDoH(t *testing.T) {
 	defer peerLn.Close()
 	peerPort := peerLn.Addr().(*net.TCPAddr).Port
 
+	hello := buildSampleClientHello("interfered.example.net")
 	receivedCh := make(chan []byte, 1)
 	go func() {
 		conn, err := peerLn.Accept()
@@ -221,7 +222,8 @@ func TestServerlessBypassEngineLoopbackWithMockDoH(t *testing.T) {
 			n, err := conn.Read(buf)
 			if n > 0 {
 				all = append(all, buf[:n]...)
-				if len(all) >= 50 {
+				// Wait until all fragmented TLS records carrying the full ClientHello payload arrive.
+				if reassembledTLSHandshakePayloadLen(all) >= len(hello)-5 {
 					_, _ = conn.Write([]byte("OK"))
 					break
 				}
@@ -266,7 +268,6 @@ func TestServerlessBypassEngineLoopbackWithMockDoH(t *testing.T) {
 	}
 	defer conn.Close()
 
-	hello := buildSampleClientHello("interfered.example.net")
 	if _, err := conn.Write(hello); err != nil {
 		t.Fatalf("write hello via SOCKS5: %v", err)
 	}
@@ -296,4 +297,20 @@ func freeLocalPort(t *testing.T) int {
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
 	return port
+}
+
+func reassembledTLSHandshakePayloadLen(raw []byte) int {
+	total := 0
+	for off := 0; off+5 <= len(raw); {
+		if raw[off] != 0x16 {
+			break
+		}
+		rlen := int(binary.BigEndian.Uint16(raw[off+3 : off+5]))
+		if off+5+rlen > len(raw) {
+			break
+		}
+		total += rlen
+		off += 5 + rlen
+	}
+	return total
 }
