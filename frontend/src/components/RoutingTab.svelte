@@ -19,6 +19,7 @@
     type DomainCacheEntry,
   } from "../lib/mygo";
   import type { PlatformUIProfile } from "../lib/platform";
+  import Select from "./Select.svelte";
   import Toggle from "./Toggle.svelte";
 
   interface Props {
@@ -321,15 +322,11 @@
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
         反 DPI 策略预设
       </span>
-      <select
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      <Select
         value={activePreset?.id ?? form.directBypassPresetID}
-        onchange={(e) => applyPreset(e.currentTarget.value)}
-      >
-        {#each visiblePresets as p}
-          <option value={p.id}>{p.name}</option>
-        {/each}
-      </select>
+        options={visiblePresets.map((p) => ({ value: p.id, label: p.name }))}
+        onchange={(val) => applyPreset(val)}
+      />
       {#if activePreset}
         <span class="text-xs text-zinc-500 dark:text-zinc-400">
           {activePreset.description}
@@ -341,29 +338,29 @@
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
         无服务器模式作用范围
       </span>
-      <select
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      <Select
         bind:value={form.directBypassScope}
+        options={[
+          { value: "global", label: "除国内与私有地址外全部绕过" },
+          { value: "list", label: "仅预设与自定义规则域名绕过" },
+        ]}
         onchange={onAutoSave}
-      >
-        <option value="global">除国内与私有地址外全部绕过</option>
-        <option value="list">仅预设与自定义规则域名绕过</option>
-      </select>
+      />
     </label>
 
     <label class="flex flex-col gap-1.5 text-sm">
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
         UDP 443 / QUIC 处理方式
       </span>
-      <select
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      <Select
         bind:value={form.directBypassQUICMode}
+        options={[
+          { value: "fake", label: "发送 QUIC Initial 诱饵包混淆（推荐）" },
+          { value: "block", label: "拦截 UDP 443 强制回落 TCP/TLS" },
+          { value: "pass", label: "原样放行 UDP 443" },
+        ]}
         onchange={onAutoSave}
-      >
-        <option value="fake">发送 QUIC Initial 诱饵包混淆（推荐）</option>
-        <option value="block">拦截 UDP 443 强制回落 TCP/TLS</option>
-        <option value="pass">原样放行 UDP 443</option>
-      </select>
+      />
     </label>
   </div>
 

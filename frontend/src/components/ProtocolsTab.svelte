@@ -3,6 +3,7 @@
   import type { AppFormState } from "../lib/config_state";
   import { formatGephExitSummary } from "../lib/geph_exits";
   import type { ExternalNode } from "../lib/mygo";
+  import Select from "./Select.svelte";
 
   interface Props {
     form: AppFormState;
@@ -112,16 +113,16 @@
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
         WARP 隧道模式
       </span>
-      <select
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      <Select
         bind:value={form.warpMode}
+        options={[
+          { value: "auto", label: "自动" },
+          { value: "wg", label: "WireGuard" },
+          { value: "awg", label: "AmneziaWG" },
+          { value: "masque", label: "MASQUE (HTTP/3 & HTTP/2)" },
+        ]}
         onchange={onAutoSave}
-      >
-        <option value="auto">自动</option>
-        <option value="wg">WireGuard</option>
-        <option value="awg">AmneziaWG</option>
-        <option value="masque">MASQUE (HTTP/3 &amp; HTTP/2)</option>
-      </select>
+      />
     </label>
     <label class="flex flex-col gap-1.5 text-sm">
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
@@ -148,15 +149,15 @@
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
         MASQUE HTTP 版本
       </span>
-      <select
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      <Select
         bind:value={form.warpMasqueVhttp}
+        options={[
+          { value: "auto", label: "自动（优先 HTTP/3，超时回退 HTTP/2）" },
+          { value: "h3", label: "HTTP/3 (QUIC)" },
+          { value: "h2", label: "HTTP/2 (TLS/TCP)" },
+        ]}
         onchange={onAutoSave}
-      >
-        <option value="auto">自动（优先 HTTP/3，超时回退 HTTP/2）</option>
-        <option value="h3">HTTP/3 (QUIC)</option>
-        <option value="h2">HTTP/2 (TLS/TCP)</option>
-      </select>
+      />
     </label>
   </div>
 </section>

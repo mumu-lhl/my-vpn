@@ -21,6 +21,7 @@
     type VPNGateSortDir,
     type VPNGateSortField,
   } from "../lib/vpngate";
+  import Select from "./Select.svelte";
 
   interface Props {
     form: AppFormState;
@@ -60,6 +61,13 @@
   ];
 
   let countries = $derived(extractVPNGateCountries(nodes));
+  let countryOptions = $derived([
+    { value: "ALL", label: `🌐 全部国家 (${nodes.length})` },
+    ...countries.map((c) => ({
+      value: c.code,
+      label: `${c.flag} ${c.name} (${c.count})`,
+    })),
+  ]);
   let filteredNodes = $derived(filterVPNGateNodes(nodes, selectedCountry));
   let visibleNodes = $derived(
     sortVPNGateNodes(filteredNodes, sortField, sortDir),
@@ -132,16 +140,15 @@
     class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3.5 dark:border-zinc-800 dark:bg-zinc-900"
   >
     <label class="flex items-center gap-2 text-xs">
-      <span class="font-medium text-zinc-600 dark:text-zinc-300">国家</span>
-      <select
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
-        bind:value={selectedCountry}
+      <span class="shrink-0 font-medium text-zinc-600 dark:text-zinc-300"
+        >国家</span
       >
-        <option value="ALL">🌐 全部国家 ({nodes.length})</option>
-        {#each countries as c}
-          <option value={c.code}>{c.flag} {c.name} ({c.count})</option>
-        {/each}
-      </select>
+      <Select
+        size="xs"
+        class="min-w-[11rem]"
+        bind:value={selectedCountry}
+        options={countryOptions}
+      />
     </label>
 
     <div class="flex flex-wrap items-center gap-1.5">

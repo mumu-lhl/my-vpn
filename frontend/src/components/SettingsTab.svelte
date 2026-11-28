@@ -18,6 +18,7 @@
   import PerAppSelector from "./PerAppSelector.svelte";
   import ProtocolsTab from "./ProtocolsTab.svelte";
   import RoutingTab from "./RoutingTab.svelte";
+  import Select from "./Select.svelte";
   import Toggle from "./Toggle.svelte";
 
   export type SettingsSubpage = null | "protocols" | "routing" | "per_app";
@@ -253,17 +254,14 @@
     </div>
 
     {#if form.probeMode === "builtin"}
-      <select
-        class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      <Select
         bind:value={form.probeBuiltinURL}
+        options={builtinProbePresets.map((preset) => ({
+          value: preset.url,
+          label: `${preset.label} — ${preset.url}`,
+        }))}
         onchange={onAutoSave}
-      >
-        {#each builtinProbePresets as preset}
-          <option value={preset.url}>
-            {preset.label} — {preset.url}
-          </option>
-        {/each}
-      </select>
+      />
     {:else}
       <input
         class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"

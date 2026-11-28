@@ -2,6 +2,7 @@
   import { Save, ShieldAlert } from "@lucide/svelte";
   import type { ChainAnalysis, ChainConfig, HopKind } from "../lib/chain";
   import type { ExternalNode } from "../lib/mygo";
+  import Select from "./Select.svelte";
   import Toggle from "./Toggle.svelte";
 
   interface Props {
@@ -21,6 +22,12 @@
   }: Props = $props();
 
   let isDirectBypass = $derived(chain.hop1.kind === "direct_bypass");
+  let externalNodeOptions = $derived(
+    sortedExternalNodes.map((node) => ({
+      value: node.id,
+      label: `${node.name} (${node.protocol})`,
+    })),
+  );
 
   function setHop(which: "hop1" | "hop2", kind: string) {
     const nextKind = kind as HopKind;
@@ -78,31 +85,27 @@
         <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
           {isDirectBypass ? "工作模式" : "第一跳（前置）"}
         </span>
-        <select
-          class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+        <Select
           value={chain.hop1.kind}
-          onchange={(e) => setHop("hop1", e.currentTarget.value)}
-        >
-          <option value="direct_bypass">直连绕过（无服务器 · 防干扰）</option>
-          <option value="geph">迷雾通 (Geph5)</option>
-          <option value="psiphon">赛风 (Psiphon · 仅 TCP)</option>
-          <option value="warp">Cloudflare WARP</option>
-          <option value="external">外部节点</option>
-        </select>
+          options={[
+            { value: "direct_bypass", label: "直连绕过（无服务器 · 防干扰）" },
+            { value: "geph", label: "迷雾通 (Geph5)" },
+            { value: "psiphon", label: "赛风 (Psiphon · 仅 TCP)" },
+            { value: "warp", label: "Cloudflare WARP" },
+            { value: "vpngate", label: "VPNGate (OpenVPN)" },
+            { value: "external", label: "外部节点" },
+          ]}
+          onchange={(val) => setHop("hop1", val)}
+        />
       </label>
       {#if chain.hop1.kind === "external"}
         {#if sortedExternalNodes.length > 0}
-          <select
-            class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+          <Select
+            size="xs"
             value={chain.hop1.node_id ?? ""}
-            onchange={(e) => setHopNode("hop1", e.currentTarget.value)}
-          >
-            {#each sortedExternalNodes as node}
-              <option value={node.id}>
-                {node.name} ({node.protocol})
-              </option>
-            {/each}
-          </select>
+            options={externalNodeOptions}
+            onchange={(val) => setHopNode("hop1", val)}
+          />
         {:else}
           <button
             type="button"
@@ -121,30 +124,26 @@
           <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
             第二跳（落地）
           </span>
-          <select
-            class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          <Select
             value={chain.hop2.kind}
-            onchange={(e) => setHop("hop2", e.currentTarget.value)}
-          >
-            <option value="warp">Cloudflare WARP</option>
-            <option value="geph">迷雾通 (Geph5)</option>
-            <option value="psiphon">赛风 (Psiphon)</option>
-            <option value="external">外部节点</option>
-          </select>
+            options={[
+              { value: "warp", label: "Cloudflare WARP" },
+              { value: "geph", label: "迷雾通 (Geph5)" },
+              { value: "psiphon", label: "赛风 (Psiphon)" },
+              { value: "vpngate", label: "VPNGate (OpenVPN)" },
+              { value: "external", label: "外部节点" },
+            ]}
+            onchange={(val) => setHop("hop2", val)}
+          />
         </label>
         {#if chain.hop2.kind === "external"}
           {#if sortedExternalNodes.length > 0}
-            <select
-              class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+            <Select
+              size="xs"
               value={chain.hop2.node_id ?? ""}
-              onchange={(e) => setHopNode("hop2", e.currentTarget.value)}
-            >
-              {#each sortedExternalNodes as node}
-                <option value={node.id}>
-                  {node.name} ({node.protocol})
-                </option>
-              {/each}
-            </select>
+              options={externalNodeOptions}
+              onchange={(val) => setHopNode("hop2", val)}
+            />
           {:else}
             <button
               type="button"
