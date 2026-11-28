@@ -132,7 +132,14 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: gradle
+      - name: Cache Gradle packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ env.MYGO_COMMIT }}
+          restore-keys: ${{ runner.os }}-gradle-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
