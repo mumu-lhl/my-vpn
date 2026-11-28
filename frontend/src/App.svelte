@@ -571,7 +571,6 @@
           {chainInfo}
           {sortedExternalNodes}
           {backendWarnings}
-          {activeProbeURL}
           {probing}
           {probeResult}
           onToggleConnect={toggleConnect}

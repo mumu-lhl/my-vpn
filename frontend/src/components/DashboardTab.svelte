@@ -29,7 +29,6 @@
     chainInfo: ChainAnalysis;
     sortedExternalNodes: ExternalNode[];
     backendWarnings: Array<{ code: string; message: string }>;
-    activeProbeURL: string;
     probing: boolean;
     probeResult: ChainProbeResult | null;
     onToggleConnect: () => void;
@@ -55,7 +54,6 @@
     chainInfo,
     sortedExternalNodes,
     backendWarnings,
-    activeProbeURL,
     probing,
     probeResult,
     onToggleConnect,
@@ -455,23 +453,19 @@
 <section
   class="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
 >
-  <div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-    <div>
-      <h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-        链路连通性与出口检测
-      </h2>
-      <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-        {activeProbeURL}
-      </p>
-    </div>
+  <div class="flex items-center justify-between gap-2">
+    <h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+      链路连通性与出口检测
+    </h2>
     <button
       type="button"
       disabled={probing}
-      class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+      aria-label="检测延迟"
+      title="检测延迟"
+      class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
       onclick={onRunProbe}
     >
-      <RefreshCw class="h-3.5 w-3.5 {probing ? 'animate-spin' : ''}" />
-      <span>{probing ? "检测中..." : "检测延迟"}</span>
+      <RefreshCw class="h-4 w-4 {probing ? 'animate-spin' : ''}" />
     </button>
   </div>
 
