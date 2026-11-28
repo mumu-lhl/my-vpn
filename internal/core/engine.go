@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/dpi"
-	"github.com/mumu-lhl/my-vpn/internal/routing"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/dpi"
+	"github.com/mumu-lhl/looma/internal/routing"
 )
 
 type TrafficStats struct {
@@ -31,7 +31,7 @@ type TrafficStats struct {
 }
 
 // Engine manages the lifecycle of the local proxy / sing-box core.
-// If MYVPN_SINGBOX_BIN is set and executable, it runs hiddify-sing-box directly
+// If LOOMA_SINGBOX_BIN (or legacy MYVPN_SINGBOX_BIN) is set and executable, it runs hiddify-sing-box directly
 // alongside a loopback Go DPI SOCKS5 bridge so TUN/sing-box runs inherit the full
 // internal/dpi engine (SNI midpoint split, disorder, OOB, Raw Fake, QUIC, per-domain cache).
 // Otherwise it runs the built-in Go SOCKS5/HTTP routing & chaining proxy engine.
@@ -57,7 +57,7 @@ type Engine struct {
 func NewEngine(workDir string) *Engine {
 	return &Engine{
 		workDir:     workDir,
-		singboxBin:  os.Getenv("MYVPN_SINGBOX_BIN"),
+		singboxBin:  firstNonEmpty(os.Getenv("LOOMA_SINGBOX_BIN"), os.Getenv("MYVPN_SINGBOX_BIN")),
 		domainCache: dpi.NewDomainStrategyCache(filepath.Join(workDir, "domain_bypass_cache.json")),
 	}
 }
@@ -594,4 +594,13 @@ func (e *Engine) handleSocks5UDPAssociate(ctrl net.Conn, br *bufio.Reader, atyp 
 			}
 		}(outConn, clientAddr, append([]byte(nil), buf[:off]...))
 	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

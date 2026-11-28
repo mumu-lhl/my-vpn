@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/platform"
-	"github.com/mumu-lhl/my-vpn/internal/routing"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/platform"
+	"github.com/mumu-lhl/looma/internal/routing"
 )
 
 type CompileWarning struct {

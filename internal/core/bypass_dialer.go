@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/bootstrap"
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/dpi"
+	"github.com/mumu-lhl/looma/internal/bootstrap"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/dpi"
 )
 
 // BypassDialer performs serverless DPI-bypass dialing using static-IP DoH resolution,
