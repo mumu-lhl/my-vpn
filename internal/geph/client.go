@@ -209,7 +209,7 @@ func (s *Supervisor) Start(ctx context.Context, cfg config.GephConfig) error {
 	if ctrlPort <= 0 {
 		ctrlPort = 19910
 	}
-	s.controlURL = fmt.Sprintf("http://127.0.0.1:%d", ctrlPort)
+	s.controlURL = fmt.Sprintf("127.0.0.1:%d", ctrlPort)
 	binPath := s.binaryPath
 	if binPath == "" {
 		binPath = ResolveBinaryPath("")
@@ -252,25 +252,56 @@ func (s *Supervisor) callControlRPC(ctx context.Context, overrideURL, method str
 		"params":  []any{},
 		"id":      1,
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("geph control RPC HTTP %d", resp.StatusCode)
+
+	var rawResp []byte
+	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("geph control RPC HTTP %d", resp.StatusCode)
+		}
+		var errRead error
+		rawResp, errRead = jsonReadAll(resp.Body)
+		if errRead != nil {
+			return errRead
+		}
+	} else {
+		addr := strings.TrimPrefix(endpoint, "tcp://")
+		dialer := &net.Dialer{Timeout: 5 * time.Second}
+		conn, err := dialer.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		if deadline, ok := ctx.Deadline(); ok {
+			_ = conn.SetDeadline(deadline)
+		} else {
+			_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+		}
+		if _, err := conn.Write(append(payload, '\n')); err != nil {
+			return err
+		}
+		br := bufio.NewReader(conn)
+		line, err := br.ReadBytes('\n')
+		if err != nil && len(line) == 0 {
+			return err
+		}
+		rawResp = line
 	}
 
 	var rpcResp struct {
 		Result json.RawMessage `json:"result"`
 		Error  any             `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+	if err := json.Unmarshal(rawResp, &rpcResp); err != nil {
 		return err
 	}
 	if rpcResp.Error != nil {
@@ -280,6 +311,14 @@ func (s *Supervisor) callControlRPC(ctx context.Context, overrideURL, method str
 		return json.Unmarshal(rpcResp.Result, out)
 	}
 	return nil
+}
+
+func jsonReadAll(r interface{ Read([]byte) (int, error) }) ([]byte, error) {
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // FetchConnInfo queries geph5-client's conn_info RPC for active bridge & session state.
@@ -402,7 +441,7 @@ func (s *Supervisor) FetchExitsOnce(ctx context.Context, cfg config.GephConfig) 
 		}
 	}()
 
-	ctrlURL := fmt.Sprintf("http://127.0.0.1:%d", ctrlPort)
+	ctrlURL := fmt.Sprintf("127.0.0.1:%d", ctrlPort)
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 

@@ -101,18 +101,18 @@ host="${addr%:*}"
 port="${addr##*:}"
 echo "$$" > "` + pidFile + `"
 exec python3 -c "
-import http.server, json, sys
-class H(http.server.BaseHTTPRequestHandler):
-    def do_POST(self):
-        self.rfile.read(int(self.headers.get('Content-Length', 0)))
-        body = json.dumps({'jsonrpc':'2.0','id':1,'result':{'exits':[{'country':'jp','city':'Tokyo','load':0.24},{'country':'sg','city':'Singapore','load':0.62}]}}).encode()
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-    def log_message(self, *args): pass
-http.server.HTTPServer(('${host}', int('${port}')), H).serve_forever()
+import socket, json
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('${host}', int('${port}')))
+srv.listen(4)
+while True:
+    conn, _ = srv.accept()
+    line = conn.recv(4096)
+    if line:
+        body = json.dumps({'jsonrpc':'2.0','id':1,'result':{'exits':[{'country':'jp','city':'Tokyo','load':0.24},{'country':'sg','city':'Singapore','load':0.62}]}}) + '\n'
+        conn.sendall(body.encode())
+    conn.close()
 "
 `
 	if err := os.WriteFile(fakeBin, []byte(script), 0o755); err != nil {

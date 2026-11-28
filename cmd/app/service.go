@@ -792,7 +792,7 @@ func (s *AppService) GetGephBridgeStatus(ctx context.Context) (*GephBridgeStatus
 	if ctrlPort <= 0 {
 		ctrlPort = 19910
 	}
-	info, err := s.geph.FetchConnInfo(ctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort))
+	info, err := s.geph.FetchConnInfo(ctx, fmt.Sprintf("127.0.0.1:%d", ctrlPort))
 	if err != nil || info == nil {
 		return &GephBridgeStatus{State: "Connecting"}, nil
 	}
@@ -875,7 +875,7 @@ func (s *AppService) FetchGephExits(ctx context.Context) ([]geph.ExitLocation, e
 		if ctrlPort <= 0 {
 			ctrlPort = 19910
 		}
-		exits, err := s.geph.FetchExits(ctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort))
+		exits, err := s.geph.FetchExits(ctx, fmt.Sprintf("127.0.0.1:%d", ctrlPort))
 		if err != nil {
 			return nil, fmt.Errorf("迷雾通控制端口暂不可达，请稍后重试")
 		}
@@ -956,7 +956,7 @@ func (s *AppService) GetLogs(ctx context.Context) LogsSnapshot {
 			ctrlPort = 19910
 		}
 		lctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		if lines, err := s.geph.FetchRecentLogs(lctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort)); err == nil {
+		if lines, err := s.geph.FetchRecentLogs(lctx, fmt.Sprintf("127.0.0.1:%d", ctrlPort)); err == nil {
 			for _, line := range lines {
 				if trimmed := strings.TrimSpace(line); trimmed != "" {
 					entries = append(entries, applog.Entry{
