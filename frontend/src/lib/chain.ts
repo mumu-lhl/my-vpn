@@ -1,5 +1,5 @@
 export type HopKind =
-  "geph" | "psiphon" | "warp" | "external" | "direct_bypass";
+  "geph" | "psiphon" | "warp" | "vpngate" | "external" | "direct_bypass";
 
 export interface HopRef {
   kind: HopKind;
@@ -21,6 +21,7 @@ export interface ChainAnalysis {
 export function analyzeChain(
   chain: ChainConfig,
   hop1SupportsUDP = true,
+  vpngateSupportsUDP = true,
 ): ChainAnalysis {
   if (chain.hop1.kind === "direct_bypass") {
     return {
@@ -31,6 +32,7 @@ export function analyzeChain(
   }
   const hop1IsTcpOnly =
     chain.hop1.kind === "psiphon" ||
+    (chain.hop1.kind === "vpngate" && !vpngateSupportsUDP) ||
     (chain.hop1.kind === "external" && !hop1SupportsUDP);
   if (!chain.two_hop) {
     return {
@@ -59,6 +61,8 @@ function formatHop(h: HopRef): string {
       return "赛风 (Psiphon)";
     case "warp":
       return "Cloudflare WARP";
+    case "vpngate":
+      return "VPNGate (OpenVPN)";
     case "external":
       return h.node_id ? `外部节点 (${h.node_id})` : "外部节点";
     case "direct_bypass":

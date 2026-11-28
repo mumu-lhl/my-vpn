@@ -14,6 +14,7 @@ const (
 	HopGeph         HopKind = "geph"
 	HopPsiphon      HopKind = "psiphon"
 	HopWarp         HopKind = "warp"
+	HopVPNGate      HopKind = "vpngate"
 	HopExternal     HopKind = "external"
 	HopDirectBypass HopKind = "direct_bypass"
 )
@@ -44,6 +45,7 @@ type AppConfig struct {
 	Geph          GephConfig     `json:"geph"`
 	Psiphon       PsiphonConfig  `json:"psiphon"`
 	Warp          WarpConfig     `json:"warp"`
+	VPNGate       VPNGateConfig  `json:"vpngate"`
 	Subscriptions []Subscription `json:"subscriptions"`
 	ExternalNodes []ExternalNode `json:"external_nodes"`
 	Routing       RoutingConfig  `json:"routing"`
@@ -97,6 +99,28 @@ type PsiphonConfig struct {
 	EgressRegion              string `json:"egress_region"` // "" means auto
 	EstablishTunnelTimeoutSec int    `json:"establish_tunnel_timeout_sec"`
 	DataDirectory             string `json:"data_directory,omitempty"`
+}
+
+type VPNGateSelectedNode struct {
+	ID           string `json:"id"`
+	HostName     string `json:"host_name"`
+	IP           string `json:"ip"`
+	CountryLong  string `json:"country_long"`
+	CountryShort string `json:"country_short"`
+	Server       string `json:"server"`
+	ServerPort   int    `json:"server_port"`
+	Network      string `json:"network"`
+	SupportsUDP  bool   `json:"supports_udp"`
+	CACert       string `json:"ca_cert,omitempty"`
+	ClientCert   string `json:"client_cert,omitempty"`
+	ClientKey    string `json:"client_key,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+}
+
+type VPNGateConfig struct {
+	APIURL       string               `json:"api_url,omitempty"`
+	SelectedNode *VPNGateSelectedNode `json:"selected_node,omitempty"`
 }
 
 type WarpConfig struct {

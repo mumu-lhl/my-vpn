@@ -16,6 +16,7 @@ import (
 	"github.com/mumu-lhl/looma/internal/core"
 	"github.com/mumu-lhl/looma/internal/ipc"
 	"github.com/mumu-lhl/looma/internal/platform"
+	"github.com/mumu-lhl/looma/internal/vpngate"
 )
 
 func TestAppServiceCoreHelperIPCAndKillSwitchLifecycle(t *testing.T) {
@@ -258,5 +259,36 @@ func TestAppServiceSelectGephExitPersistsCountryAndCityACGEPH04(t *testing.T) {
 	cfg = svc.GetConfig()
 	if cfg.Geph.ExitCountry != "auto" || cfg.Geph.ExitCity != "" {
 		t.Fatalf("expected auto/empty, got %q/%q", cfg.Geph.ExitCountry, cfg.Geph.ExitCity)
+	}
+}
+
+func TestAppServiceVPNGateFetchRequiresProxyAndSelectsNodeACVPNGATE01ACVPNGATE04(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+
+	// Disconnected state must return a friendly error telling user to connect a proxy first.
+	if _, err := svc.FetchVPNGateNodes(context.Background()); err == nil {
+		t.Fatalf("expected FetchVPNGateNodes to fail when disconnected")
+	}
+
+	node := &vpngate.Node{
+		ID:           "vpn-jp-1-203.0.113.10-tcp-1195",
+		HostName:     "vpn-jp-1",
+		IP:           "203.0.113.10",
+		CountryLong:  "Japan",
+		CountryShort: "JP",
+		Server:       "203.0.113.10",
+		ServerPort:   1195,
+		Network:      "tcp",
+		SupportsUDP:  false,
+	}
+	if err := svc.SelectVPNGateNode(context.Background(), node); err != nil {
+		t.Fatalf("SelectVPNGateNode: %v", err)
+	}
+	cfg := svc.GetConfig()
+	if cfg.VPNGate.SelectedNode == nil || cfg.VPNGate.SelectedNode.ID != node.ID {
+		t.Fatalf("expected selected VPNGate node %q, got %+v", node.ID, cfg.VPNGate.SelectedNode)
 	}
 }

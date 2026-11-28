@@ -12,6 +12,7 @@
   import { formatBytes, type ChainAnalysis, type HopKind } from "../lib/chain";
   import type { AppFormState } from "../lib/config_state";
   import { formatGephExitSummary } from "../lib/geph_exits";
+  import { formatVPNGateCountry } from "../lib/vpngate";
   import type { ExternalNode } from "../lib/mygo";
   import type { PlatformUIProfile } from "../lib/platform";
   import { formatLatency, type ChainProbeResult } from "../lib/probe";
@@ -39,6 +40,7 @@
     onOpenAndroidVpnSettings: () => void;
     onOpenSettingsSubpage: (sub: "protocols" | "routing") => void;
     onOpenGephExits: () => void;
+    onOpenVPNGate: () => void;
     onRunProbe: () => void;
   }
 
@@ -64,6 +66,7 @@
     onOpenAndroidVpnSettings,
     onOpenSettingsSubpage,
     onOpenGephExits,
+    onOpenVPNGate,
     onRunProbe,
   }: Props = $props();
 
@@ -71,6 +74,19 @@
   let gephSummary = $derived(
     formatGephExitSummary(form.gephCountry, form.gephCity),
   );
+  let vpngateSummary = $derived.by(() => {
+    if (!form.vpngateNode) {
+      return { flag: "🌐", label: "未选择节点，点击拉取并选择" };
+    }
+    const c = formatVPNGateCountry(
+      form.vpngateNode.country_short,
+      form.vpngateNode.country_long,
+    );
+    return {
+      flag: c.flag,
+      label: `${c.name} · ${form.vpngateNode.host_name || form.vpngateNode.ip}`,
+    };
+  });
 
   function setHop(which: "hop1" | "hop2", kind: string) {
     const nextKind = kind as HopKind;
@@ -240,6 +256,7 @@
           <option value="geph">迷雾通 (Geph5)</option>
           <option value="psiphon">赛风 (Psiphon · 仅 TCP)</option>
           <option value="warp">Cloudflare WARP</option>
+          <option value="vpngate">VPNGate (OpenVPN)</option>
           <option value="external">外部节点</option>
         </select>
       </label>
@@ -279,6 +296,20 @@
           </span>
           <ChevronRight class="h-3.5 w-3.5 shrink-0 text-zinc-400" />
         </button>
+      {:else if form.chain.hop1.kind === "vpngate"}
+        <button
+          type="button"
+          onclick={onOpenVPNGate}
+          class="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-xs transition hover:border-blue-400 hover:bg-zinc-100/70 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-blue-500 dark:hover:bg-zinc-900"
+        >
+          <span class="flex min-w-0 items-center gap-2">
+            <span class="text-base leading-none">{vpngateSummary.flag}</span>
+            <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
+              {vpngateSummary.label}
+            </span>
+          </span>
+          <ChevronRight class="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+        </button>
       {/if}
     </div>
 
@@ -296,6 +327,7 @@
             <option value="warp">Cloudflare WARP</option>
             <option value="geph">迷雾通 (Geph5)</option>
             <option value="psiphon">赛风 (Psiphon)</option>
+            <option value="vpngate">VPNGate (OpenVPN)</option>
             <option value="external">外部节点</option>
           </select>
         </label>
@@ -331,6 +363,20 @@
               <span class="text-base leading-none">{gephSummary.flag}</span>
               <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
                 {gephSummary.label}
+              </span>
+            </span>
+            <ChevronRight class="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+          </button>
+        {:else if form.chain.hop2.kind === "vpngate"}
+          <button
+            type="button"
+            onclick={onOpenVPNGate}
+            class="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-xs transition hover:border-blue-400 hover:bg-zinc-100/70 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-blue-500 dark:hover:bg-zinc-900"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <span class="text-base leading-none">{vpngateSummary.flag}</span>
+              <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
+                {vpngateSummary.label}
               </span>
             </span>
             <ChevronRight class="h-3.5 w-3.5 shrink-0 text-zinc-400" />

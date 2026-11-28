@@ -22,6 +22,7 @@ import (
 	"github.com/mumu-lhl/looma/internal/speedtest"
 	"github.com/mumu-lhl/looma/internal/storage"
 	"github.com/mumu-lhl/looma/internal/subscription"
+	"github.com/mumu-lhl/looma/internal/vpngate"
 )
 
 type AppService struct {
@@ -548,6 +549,83 @@ func (s *AppService) OpenVpnSettings(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("android_netlink bridge not initialized")
 	}
 	return s.androidBridge.OpenVpnSettings(ctx)
+}
+
+func (s *AppService) vpngateCachePath() string {
+	return filepath.Join(s.dataDir, "vpngate_cache.json")
+}
+
+// GetVPNGateNodes returns the locally cached VPNGate node list.
+func (s *AppService) GetVPNGateNodes() ([]vpngate.Node, error) {
+	return vpngate.LoadCache(s.vpngateCachePath())
+}
+
+// FetchVPNGateNodes fetches the live VPNGate node list via the active local proxy
+// and persists it to the local cache.
+func (s *AppService) FetchVPNGateNodes(ctx context.Context) ([]vpngate.Node, error) {
+	if !s.GetStats().Running {
+		return nil, fmt.Errorf("请先连接任意可用代理或 VPN 后再拉取 VPNGate 节点列表")
+	}
+	cfg := s.store.Get()
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", cfg.Inbound.HTTPPort)
+	nodes, err := vpngate.FetchFromAPI(ctx, cfg.VPNGate.APIURL, proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("拉取 VPNGate 节点失败：%w", err)
+	}
+	_ = vpngate.SaveCache(s.vpngateCachePath(), nodes)
+	return nodes, nil
+}
+
+// SelectVPNGateNode persists the selected VPNGate OpenVPN node and smoothly
+// reconnects if the tunnel is currently running with VPNGate.
+func (s *AppService) SelectVPNGateNode(ctx context.Context, node *vpngate.Node) error {
+	cfg := s.store.Get()
+	var selected *config.VPNGateSelectedNode
+	if node != nil {
+		selected = &config.VPNGateSelectedNode{
+			ID:           node.ID,
+			HostName:     node.HostName,
+			IP:           node.IP,
+			CountryLong:  node.CountryLong,
+			CountryShort: node.CountryShort,
+			Server:       node.Server,
+			ServerPort:   node.ServerPort,
+			Network:      node.Network,
+			SupportsUDP:  node.SupportsUDP,
+			CACert:       node.CACert,
+			ClientCert:   node.ClientCert,
+			ClientKey:    node.ClientKey,
+			Username:     node.Username,
+			Password:     node.Password,
+		}
+	}
+	prevID := ""
+	if cfg.VPNGate.SelectedNode != nil {
+		prevID = cfg.VPNGate.SelectedNode.ID
+	}
+	nextID := ""
+	if selected != nil {
+		nextID = selected.ID
+	}
+	cfg.VPNGate.SelectedNode = selected
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+
+	usesVPNGate := cfg.Chain.Hop1.Kind == config.HopVPNGate || (cfg.Chain.TwoHop && cfg.Chain.Hop2.Kind == config.HopVPNGate)
+	if prevID != nextID && usesVPNGate && s.GetStats().Running {
+		if err := s.Disconnect(); err != nil {
+			s.notifyStateChange()
+			return fmt.Errorf("disconnect before switching vpngate node: %w", err)
+		}
+		if _, err := s.Connect(ctx); err != nil {
+			s.notifyStateChange()
+			return fmt.Errorf("reconnect with new vpngate node: %w", err)
+		}
+		return nil
+	}
+	s.notifyStateChange()
+	return nil
 }
 
 func (s *AppService) GetBypassPresets() []dpi.Strategy {

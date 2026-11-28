@@ -165,3 +165,50 @@ func TestCompileSingBoxDirectBypassSocksBridge(t *testing.T) {
 		t.Fatalf("direct-bypass outbound not found")
 	}
 }
+
+func TestCompileVPNGateOpenVPNClientEndpointAndChainACVPNGATE02(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Chain.TwoHop = true
+	cfg.Chain.Hop1 = config.HopRef{Kind: config.HopVPNGate}
+	cfg.Chain.Hop2 = config.HopRef{Kind: config.HopWarp}
+	cfg.VPNGate.SelectedNode = &config.VPNGateSelectedNode{
+		ID:           "vpn-jp-01-203.0.113.10-tcp-1195",
+		HostName:     "vpn-jp-01",
+		IP:           "203.0.113.10",
+		CountryLong:  "Japan",
+		CountryShort: "JP",
+		Server:       "203.0.113.10",
+		ServerPort:   1195,
+		Network:      "tcp",
+		SupportsUDP:  false,
+		CACert:       "CA-PEM",
+		ClientCert:   "CERT-PEM",
+		ClientKey:    "KEY-PEM",
+		Username:     "vpn",
+		Password:     "vpn",
+	}
+
+	res, err := CompileSingBoxConfig(cfg, 0)
+	if err != nil {
+		t.Fatalf("CompileSingBoxConfig: %v", err)
+	}
+	endpoints, ok := res.Config["endpoints"].([]map[string]any)
+	if !ok || len(endpoints) != 2 {
+		t.Fatalf("expected 2 endpoints (openvpn-client + warp), got %+v", res.Config["endpoints"])
+	}
+	if endpoints[0]["type"] != "openvpn-client" || endpoints[0]["network"] != "tcp" || endpoints[0]["server_port"] != 1195 {
+		t.Fatalf("unexpected openvpn-client endpoint: %+v", endpoints[0])
+	}
+	if endpoints[1]["type"] != "warp" || endpoints[1]["detour"] != "hop-1" {
+		t.Fatalf("expected hop-2 warp detoured via hop-1, got %+v", endpoints[1])
+	}
+	var hasAutoH2 bool
+	for _, w := range res.Warnings {
+		if w.Code == "WARP_AUTO_MASQUE_H2" {
+			hasAutoH2 = true
+		}
+	}
+	if !hasAutoH2 {
+		t.Fatalf("expected WARP_AUTO_MASQUE_H2 warning when hop1 is TCP VPNGate, warnings=%+v", res.Warnings)
+	}
+}

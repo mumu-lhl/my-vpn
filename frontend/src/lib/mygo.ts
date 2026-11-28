@@ -102,6 +102,31 @@ export interface GephExitLocation {
   load?: number;
 }
 
+export interface VPNGateNode {
+  id: string;
+  host_name: string;
+  ip: string;
+  score: number;
+  ping: number;
+  speed: number;
+  country_long: string;
+  country_short: string;
+  num_vpn_sessions: number;
+  uptime: number;
+  total_users: number;
+  total_traffic: number;
+  operator?: string;
+  server: string;
+  server_port: number;
+  network: "tcp" | "udp";
+  supports_udp: boolean;
+  ca_cert?: string;
+  client_cert?: string;
+  client_key?: string;
+  username?: string;
+  password?: string;
+}
+
 export function hasMyGoBridge(): boolean {
   return (
     typeof window !== "undefined" && typeof window.mygo?.call === "function"
@@ -145,6 +170,11 @@ export const AppService = {
   FetchGephExits: () => callGo<GephExitLocation[]>("AppService.FetchGephExits"),
   SelectGephExit: (country: string, city: string) =>
     callGo<void>("AppService.SelectGephExit", country, city),
+  GetVPNGateNodes: () => callGo<VPNGateNode[]>("AppService.GetVPNGateNodes"),
+  FetchVPNGateNodes: () =>
+    callGo<VPNGateNode[]>("AppService.FetchVPNGateNodes"),
+  SelectVPNGateNode: (node: VPNGateNode | null) =>
+    callGo<void>("AppService.SelectVPNGateNode", node),
   GetClassicCNApps: () => callGo<ClassicCNApp[]>("AppService.GetClassicCNApps"),
   DetectCNApps: (apps: InstalledApp[]) =>
     callGo<DetectedCNApp[]>("AppService.DetectCNApps", apps),

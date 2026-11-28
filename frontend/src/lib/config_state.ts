@@ -15,6 +15,15 @@ export interface AppFormState {
   gephSecret: string;
   gephCountry: string;
   gephCity: string;
+  vpngateNode: {
+    id: string;
+    host_name: string;
+    ip: string;
+    country_long: string;
+    country_short: string;
+    network: string;
+    supports_udp: boolean;
+  } | null;
   psiphonRegion: string;
   warpMode: "auto" | "wg" | "awg" | "masque";
   warpLicense: string;
@@ -91,6 +100,7 @@ export function createDefaultFormState(): AppFormState {
     gephSecret: "",
     gephCountry: "auto",
     gephCity: "",
+    vpngateNode: null,
     psiphonRegion: "auto",
     warpMode: "auto",
     warpLicense: "",
@@ -177,6 +187,20 @@ export function hydrateFormState(
     next.gephSecret = cfg.geph.secret ?? "";
     next.gephCountry = cfg.geph.exit_country ?? "auto";
     next.gephCity = cfg.geph.exit_city ?? "";
+  }
+  if (cfg.vpngate?.selected_node) {
+    const n = cfg.vpngate.selected_node;
+    next.vpngateNode = {
+      id: n.id ?? "",
+      host_name: n.host_name ?? "",
+      ip: n.ip ?? "",
+      country_long: n.country_long ?? "",
+      country_short: n.country_short ?? "",
+      network: n.network ?? "tcp",
+      supports_udp: Boolean(n.supports_udp),
+    };
+  } else {
+    next.vpngateNode = null;
   }
   if (cfg.psiphon) {
     next.psiphonRegion = cfg.psiphon.egress_region ?? "auto";

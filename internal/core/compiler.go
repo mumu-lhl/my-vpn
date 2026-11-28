@@ -2,7 +2,9 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mumu-lhl/looma/internal/config"
 	"github.com/mumu-lhl/looma/internal/platform"
@@ -181,6 +183,54 @@ func CompileSingBoxConfigWithOptions(cfg *config.AppConfig, tunFD int, opts Comp
 			}
 			endpoints = append(endpoints, ep)
 			return true, w.MASQUE.IPv6, nil
+
+		case config.HopVPNGate:
+			n := cfg.VPNGate.SelectedNode
+			if n == nil || strings.TrimSpace(n.Server) == "" || n.ServerPort <= 0 {
+				return false, false, errors.New("请先在主页选择 VPNGate 节点后再连接")
+			}
+			netType := strings.ToLower(strings.TrimSpace(n.Network))
+			if netType != "udp" {
+				netType = "tcp"
+			}
+			ep := map[string]any{
+				"type":        "openvpn-client",
+				"tag":         tag,
+				"mode":        "tls",
+				"server":      n.Server,
+				"server_port": n.ServerPort,
+				"network":     netType,
+			}
+			if n.Username != "" {
+				ep["username"] = n.Username
+			}
+			if n.Password != "" {
+				ep["password"] = n.Password
+			}
+			tlsConf := map[string]any{}
+			if n.CACert != "" {
+				tlsConf["certificate"] = n.CACert
+			}
+			if n.ClientCert != "" {
+				tlsConf["client_certificate"] = n.ClientCert
+			}
+			if n.ClientKey != "" {
+				tlsConf["client_key"] = n.ClientKey
+			}
+			if len(tlsConf) > 0 {
+				ep["tls"] = tlsConf
+			}
+			if detour != "" {
+				ep["detour"] = detour
+			}
+			endpoints = append(endpoints, ep)
+			if netType != "udp" {
+				warnings = append(warnings, CompileWarning{
+					Code:    "VPNGATE_TCP_ONLY",
+					Message: "当前 VPNGate 节点使用 TCP 模式；非直连 UDP 流量将被拦截以防泄露。",
+				})
+			}
+			return netType == "udp", false, nil
 
 		case config.HopExternal:
 			node := cfg.FindExternalNode(ref.NodeID)

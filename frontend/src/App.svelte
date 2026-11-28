@@ -19,6 +19,7 @@
     AppService,
     hasMyGoBridge,
     type GephExitLocation,
+    type VPNGateNode,
   } from "./lib/mygo";
   import {
     buildConfigPayload,
@@ -29,11 +30,12 @@
   import StatusBanners from "./components/StatusBanners.svelte";
   import DashboardTab from "./components/DashboardTab.svelte";
   import GephExitsSubpage from "./components/GephExitsSubpage.svelte";
+  import VPNGateSubpage from "./components/VPNGateSubpage.svelte";
   import SettingsTab, {
     type SettingsSubpage,
   } from "./components/SettingsTab.svelte";
 
-  type DashboardSubpage = null | "geph-exits";
+  type DashboardSubpage = null | "geph-exits" | "vpngate";
 
   const THEME_STORAGE_KEY = "looma_theme_mode";
 
@@ -71,6 +73,11 @@
   let switchingGephExit = $state(false);
   let gephExitsError = $state("");
   let gephExitsUpdatedAt = $state(0);
+
+  let vpngateNodes = $state<VPNGateNode[]>([]);
+  let loadingVPNGate = $state(false);
+  let switchingVPNGate = $state(false);
+  let vpngateError = $state("");
   let subName = $state("");
   let subURL = $state("");
   let testingNodes = $state(false);
@@ -82,7 +89,9 @@
   let debouncedSaveTimer: number | undefined;
 
   let platformUI = $derived(getPlatformUIProfile(runtimePlatform));
-  let chainInfo = $derived(analyzeChain(form.chain));
+  let chainInfo = $derived(
+    analyzeChain(form.chain, true, form.vpngateNode?.supports_udp ?? true),
+  );
   let activeProbeURL = $derived(
     form.probeMode === "custom" && form.probeCustomURL.trim()
       ? form.probeCustomURL.trim()
@@ -161,6 +170,10 @@
 
   function openDashboardGephExits() {
     navigateTo("dashboard", { dashboardSubpage: "geph-exits" });
+  }
+
+  function openDashboardVPNGate() {
+    navigateTo("dashboard", { dashboardSubpage: "vpngate" });
   }
 
   async function persistConfig(showNotice = false): Promise<boolean> {
@@ -368,6 +381,76 @@
     }
   }
 
+  async function loadVPNGateCache() {
+    if (!bridgeReady) return;
+    try {
+      const cached = await AppService.GetVPNGateNodes();
+      if (Array.isArray(cached)) {
+        vpngateNodes = cached;
+      }
+    } catch {
+      // Ignore missing cache on first launch.
+    }
+  }
+
+  async function refreshVPNGateNodes() {
+    if (loadingVPNGate) return;
+    if (!bridgeReady) {
+      vpngateError = "浏览器预览模式下无法拉取 VPNGate 节点";
+      return;
+    }
+    if (!connected) {
+      vpngateError = "请先连接任意可用代理或 VPN 后再拉取 VPNGate 节点列表";
+      return;
+    }
+    loadingVPNGate = true;
+    vpngateError = "";
+    try {
+      vpngateNodes = await AppService.FetchVPNGateNodes();
+    } catch (err) {
+      vpngateError = errMsg(err);
+    } finally {
+      loadingVPNGate = false;
+    }
+  }
+
+  async function selectVPNGateNode(node: VPNGateNode) {
+    if (switchingVPNGate) return;
+    const prevNode = form.vpngateNode;
+    form.vpngateNode = {
+      id: node.id,
+      host_name: node.host_name,
+      ip: node.ip,
+      country_long: node.country_long,
+      country_short: node.country_short,
+      network: node.network,
+      supports_udp: node.supports_udp,
+    };
+    statusError = "";
+    statusNotice = "";
+
+    if (!bridgeReady) {
+      navigateTo("dashboard", { dashboardSubpage: null });
+      return;
+    }
+
+    switchingVPNGate = true;
+    try {
+      await AppService.SelectVPNGateNode(node);
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      form = hydrateFormState(cfg, form);
+      await syncRuntimeStats();
+      statusNotice = `已选择 VPNGate 节点：${node.country_short} · ${node.host_name || node.ip}`;
+      navigateTo("dashboard", { dashboardSubpage: null });
+    } catch (err) {
+      form.vpngateNode = prevNode;
+      vpngateError = `切换 VPNGate 节点失败：${errMsg(err)}`;
+    } finally {
+      switchingVPNGate = false;
+    }
+  }
+
   async function importSub() {
     if (!subURL.trim()) {
       statusError = "请输入订阅链接或分享 URI";
@@ -558,6 +641,19 @@
           onSelectExit={selectGephExit}
           onOpenProtocolsSettings={() => openSettingsSubpage("protocols")}
         />
+      {:else if dashboardSubpage === "vpngate"}
+        <VPNGateSubpage
+          {form}
+          nodes={vpngateNodes}
+          {connected}
+          loading={loadingVPNGate}
+          switching={switchingVPNGate}
+          errorMessage={vpngateError}
+          onBack={() => navigateTo("dashboard", { dashboardSubpage: null })}
+          onLoadCache={loadVPNGateCache}
+          onRefresh={refreshVPNGateNodes}
+          onSelectNode={selectVPNGateNode}
+        />
       {:else}
         <DashboardTab
           {form}
@@ -581,6 +677,7 @@
           onOpenAndroidVpnSettings={openAndroidVpnSettings}
           onOpenSettingsSubpage={(sub) => openSettingsSubpage(sub)}
           onOpenGephExits={openDashboardGephExits}
+          onOpenVPNGate={openDashboardVPNGate}
           onRunProbe={runProbe}
         />
       {/if}
