@@ -1,4 +1,4 @@
-# my-vpn
+# Looma
 
 Cross-platform censorship-circumvention proxy & VPN client for **Linux (`niri` / Wayland)** and **Android (10+ / `arm64-v8a`)**, built with [MyGo](https://mygo.run/docs) + Svelte 5 (Bun + Tailwind CSS + Lucide) + [hiddify-sing-box](https://github.com/hiddify/hiddify-sing-box) v5 + [geph5-client](https://github.com/geph-official/geph5).
 
@@ -42,7 +42,7 @@ upload Actions artifacts separately.
 ## Android release signing
 
 Both `v*` tag builds and nightly releases use the same Android signing key.
-The signed APK and AAB are uploaded as the `my-vpn-android-arm64` Actions
+The signed APK and AAB are uploaded as the `looma-android-arm64` Actions
 artifact and are also attached to the nightly prerelease. Reuse the
 existing release key if you have already distributed a release APK.
 Otherwise, generate a key once and configure the repository's Actions

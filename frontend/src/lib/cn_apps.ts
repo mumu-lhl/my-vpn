@@ -116,7 +116,6 @@ const INTERNATIONAL_KEEP = [
   "com.zhiliaoapp.musically",
   "com.ss.android.ugc.trill",
   "com.tencent.ig",
-  "io.github.mumulhl.myvpn",
 ];
 
 const CJK_RE = /[\u4e00-\u9fff]/;

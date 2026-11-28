@@ -9,7 +9,7 @@
 *.rpm
 *.tar.gz
 core-helper
-my-vpn
+looma
 
 # Frontend
 frontend/node_modules/

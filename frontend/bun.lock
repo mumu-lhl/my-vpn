@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "my-vpn-frontend",
+      "name": "looma-frontend",
       "dependencies": {
         "@lucide/svelte": "^1.81.0",
       },

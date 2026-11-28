@@ -1,6 +1,6 @@
-# my-vpn
+# Looma
 
-my-vpn is a cross-platform censorship-circumvention proxy and VPN application for Linux (`niri` / Wayland) and Android (10+ / `arm64-v8a`), built with MyGo, Svelte 5 (Bun + Tailwind CSS + Lucide), `hiddify-sing-box` v5, and `geph5-client`.
+Looma is a cross-platform censorship-circumvention proxy and VPN application for Linux (`niri` / Wayland) and Android (10+ / `arm64-v8a`), built with MyGo, Svelte 5 (Bun + Tailwind CSS + Lucide), `hiddify-sing-box` v5, and `geph5-client`.
 
 Consult relevant sections of [SPEC.md](SPEC.md) when working on architecture, protocol chaining, routing/DNS anti-leak rules, build tooling, or platform-specific behavior.
 

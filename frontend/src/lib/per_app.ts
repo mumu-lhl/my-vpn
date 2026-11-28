@@ -35,10 +35,7 @@ export interface PerAppFilterOptions {
   selectedFirst: boolean;
 }
 
-const SELF_PACKAGES = new Set([
-  "io.github.mumulhl.looma",
-  "io.github.mumulhl.myvpn",
-]);
+const SELF_PACKAGES = new Set(["io.github.mumulhl.looma"]);
 
 const CLASSIC_MAP = new Map(
   CLASSIC_CN_APPS.map((a) => [a.package_name.toLowerCase(), a]),

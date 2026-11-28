@@ -1,6 +1,6 @@
-# my-vpn 技术规格与验收标准（SPEC）
+# Looma 技术规格与验收标准（SPEC）
 
-* **目标仓库**：`https://github.com/mumu-lhl/my-vpn`
+* **目标仓库**：`https://github.com/mumu-lhl/looma`
 
 * **目标平台**：Linux（主目标 `niri` / Wayland，兼容主流 Wayland/X11 桌面）与 Android（Android 10+ / API 29+，仅 `arm64-v8a`）
 
@@ -8,7 +8,7 @@
 
 ## 1. 项目定位与核心目标
 
-`my-vpn` 是一款面向 Linux 与 Android 的跨平台抗封锁代理与 VPN 客户端。系统以 [MyGo](https://mygo.run/docs)（跟踪含 Android 支持的 `main` 分支）为应用壳与前后端桥接框架，以 Svelte 构建统一响应式前端，底层将 [hiddify-sing-box](https://github.com/hiddify/hiddify-sing-box)（v5，基于 sing-box 1.15）与 [geph5-client](https://github.com/geph-official/geph5) 深度整合，提供开箱即用的多协议抗封锁能力、灵活的一级/二级链式代理、细粒度分流与 DNS 防泄露能力。
+`Looma` 是一款面向 Linux 与 Android 的跨平台抗封锁代理与 VPN 客户端。系统以 [MyGo](https://mygo.run/docs)（跟踪含 Android 支持的 `main` 分支）为应用壳与前后端桥接框架，以 Svelte 构建统一响应式前端，底层将 [hiddify-sing-box](https://github.com/hiddify/hiddify-sing-box)（v5，基于 sing-box 1.15）与 [geph5-client](https://github.com/geph-official/geph5) 深度整合，提供开箱即用的多协议抗封锁能力、灵活的一级/二级链式代理、细粒度分流与 DNS 防泄露能力。
 
 核心能力范围：
 
@@ -206,7 +206,7 @@
 ## 6. 推荐仓库目录结构
 
 ```
-my-vpn/
+looma/
 ├── cmd/
 │   ├── app/                  # MyGo 主应用入口（Linux GUI & Android App）
 │   └── core-helper/          # Linux 独立无 GUI 代理核心（用于一次性 setcap 跑 TUN）
