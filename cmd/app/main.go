@@ -101,7 +101,7 @@ func main() {
 		mainWin = nil
 		winMu.Unlock()
 
-		if !ShouldKeepAliveInTray(svc.GetConfig(), trayCtrl.Active()) {
+		if !ShouldKeepAliveInTray(svc.GetConfig(), trayCtrl.Active(), svc.GetStats().Running) {
 			quitApp()
 		}
 	})

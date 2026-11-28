@@ -21,18 +21,20 @@ func TestShouldKeepAliveInTray(t *testing.T) {
 		name       string
 		cfg        *config.AppConfig
 		trayActive bool
+		connected  bool
 		want       bool
 	}{
-		{"minimize enabled and tray active", cfgOn, true, true},
-		{"minimize enabled but tray unavailable", cfgOn, false, false},
-		{"minimize disabled and tray active", cfgOff, true, false},
-		{"minimize disabled and tray unavailable", cfgOff, false, false},
-		{"nil config", nil, true, false},
+		{"minimize enabled, tray active, connected", cfgOn, true, true, true},
+		{"minimize enabled, tray active, disconnected", cfgOn, true, false, false},
+		{"minimize enabled but tray unavailable", cfgOn, false, true, false},
+		{"minimize disabled and tray active", cfgOff, true, true, false},
+		{"minimize disabled and tray unavailable", cfgOff, false, false, false},
+		{"nil config", nil, true, true, false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := ShouldKeepAliveInTray(tc.cfg, tc.trayActive); got != tc.want {
+			if got := ShouldKeepAliveInTray(tc.cfg, tc.trayActive, tc.connected); got != tc.want {
 				t.Fatalf("ShouldKeepAliveInTray() = %v, want %v", got, tc.want)
 			}
 		})
@@ -114,10 +116,10 @@ func TestAppServiceStateSyncModeSwitchAndShutdown(t *testing.T) {
 		t.Fatalf("expected running after Connect, got %+v", st)
 	}
 
-	// Closing the main window with MinimizeToTray=true and an active tray must
-	// keep the proxy running untouched.
-	if !ShouldKeepAliveInTray(svc.GetConfig(), true) {
-		t.Fatalf("expected keep-alive in tray")
+	// Closing the main window with MinimizeToTray=true, an active tray, and an active
+	// connection must keep the proxy running untouched.
+	if !ShouldKeepAliveInTray(svc.GetConfig(), true, svc.GetStats().Running) {
+		t.Fatalf("expected keep-alive in tray while connected")
 	}
 	if st := svc.GetStats(); !st.Running {
 		t.Fatalf("expected proxy to stay connected when hiding window to tray")

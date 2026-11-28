@@ -21,10 +21,10 @@ const (
 )
 
 // ShouldKeepAliveInTray decides whether closing the main window should keep
-// Looma running in the background. When tray initialization fails, closing the
-// window exits instead of leaving an unreachable background process.
-func ShouldKeepAliveInTray(cfg *config.AppConfig, trayActive bool) bool {
-	if !trayActive || cfg == nil {
+// Looma running in the background. It only stays resident when the SNI tray
+// is active, MinimizeToTray is enabled, and a proxy/VPN tunnel is connected.
+func ShouldKeepAliveInTray(cfg *config.AppConfig, trayActive, connected bool) bool {
+	if !trayActive || !connected || cfg == nil {
 		return false
 	}
 	return cfg.Linux.MinimizeToTray
