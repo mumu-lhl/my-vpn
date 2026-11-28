@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go-test:
     runs-on: ubuntu-latest
@@ -14,11 +18,11 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.4'
+          cache: true
       - name: Run Go unit and integration tests
         env:
           GOPROXY: direct,https://proxy.golang.org
-        run: |
-          go test -v -race ./...
+        run: go test -v -race ./...
 
   frontend-test:
     runs-on: ubuntu-latest
@@ -30,7 +34,14 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.4'
-      - name: Install, fmt, check, lint, and test Svelte frontend
+          cache: true
+      - name: Cache Bun packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Install, fmt, check, lint, test, and build Svelte frontend
         working-directory: frontend
         run: |
           bun install --frozen-lockfile || bun install
@@ -38,5 +49,10 @@ jobs:
           bun check
           bun run lint
           bun test
+          bun run build
       - name: Build Linux binaries with the embedded frontend
-        run: make build
+        env:
+          GOPROXY: direct,https://proxy.golang.org
+        run: |
+          go build -tags looma_embed_frontend -o bin/looma ./cmd/app
+          go build -o bin/looma-helper ./cmd/core-helper

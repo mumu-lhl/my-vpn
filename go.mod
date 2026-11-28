@@ -3,7 +3,7 @@ module github.com/mumu-lhl/looma
 go 1.27.4
 
 require (
-	github.com/egoist/mygo v0.10.1-0.20261126171813-638d360992ae
+	github.com/egoist/mygo v0.10.1-0.20261128111608-e148c06d208f
 	gopkg.in/yaml.v3 v3.0.1
 )
 
