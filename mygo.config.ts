@@ -15,6 +15,10 @@ export default {
     extractNativeLibs: true,
     keystore: process.env.ANDROID_KEYSTORE_PATH,
     keyAlias: "looma",
+    adaptiveIcon: {
+      foreground: "resources/icon-foreground.png",
+      background: "#1d3d76",
+    },
     permissions: [
       "INTERNET",
       "ACCESS_NETWORK_STATE",
