@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +43,7 @@ type AppService struct {
 	androidBridge   androidNetBridge
 	usingAndroidVPN bool
 	tunStoppedOff   func()
+	bridgeGeoCache  map[string]string
 	onStateChange   func()
 }
 
@@ -49,13 +54,14 @@ func NewAppService(dataDir string) (*AppService, error) {
 	}
 	defaultSock := filepath.Join(os.TempDir(), fmt.Sprintf("looma-%d", os.Getuid()), "looma-helper.sock")
 	svc := &AppService{
-		dataDir:       dataDir,
-		store:         st,
-		engine:        core.NewEngine(filepath.Join(dataDir, "runtime")),
-		geph:          geph.NewSupervisor(geph.ResolveBinaryPath(""), filepath.Join(dataDir, "geph")),
-		prober:        probe.NewProber(),
-		helperSock:    defaultSock,
-		androidBridge: newMyGoAndroidBridge(),
+		dataDir:        dataDir,
+		store:          st,
+		engine:         core.NewEngine(filepath.Join(dataDir, "runtime")),
+		geph:           geph.NewSupervisor(geph.ResolveBinaryPath(""), filepath.Join(dataDir, "geph")),
+		prober:         probe.NewProber(),
+		helperSock:     defaultSock,
+		androidBridge:  newMyGoAndroidBridge(),
+		bridgeGeoCache: map[string]string{},
 	}
 	if svc.androidBridge.Available() {
 		svc.tunStoppedOff = svc.androidBridge.OnTunStopped(func() {
@@ -466,6 +472,98 @@ func (s *AppService) TestAllNodes(ctx context.Context) []speedtest.Result {
 	cfg := s.store.Get()
 	tester := speedtest.NewTester()
 	return tester.TestAll(ctx, cfg.ExternalNodes)
+}
+
+type GephBridgeStatus struct {
+	State       string `json:"state"`
+	BridgeAddr  string `json:"bridge_addr"`
+	BridgeIP    string `json:"bridge_ip"`
+	CountryCode string `json:"country_code"`
+	Protocol    string `json:"protocol"`
+}
+
+// GetGephBridgeStatus queries the running geph5-client conn_info RPC and resolves
+// the active bridge IP's ISO-2 country code (cached in memory).
+func (s *AppService) GetGephBridgeStatus(ctx context.Context) (*GephBridgeStatus, error) {
+	if !s.geph.IsRunning() {
+		return &GephBridgeStatus{State: "Disconnected"}, nil
+	}
+	cfg := s.store.Get()
+	ctrlPort := cfg.Geph.ControlPort
+	if ctrlPort <= 0 {
+		ctrlPort = 19910
+	}
+	info, err := s.geph.FetchConnInfo(ctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort))
+	if err != nil || info == nil {
+		return &GephBridgeStatus{State: "Connecting"}, nil
+	}
+	if info.State != "Connected" || len(info.Sessions) == 0 {
+		st := info.State
+		if st == "" {
+			st = "Connecting"
+		}
+		return &GephBridgeStatus{State: st}, nil
+	}
+	sess := info.Sessions[0]
+	bridgeIP := sess.Bridge
+	if host, _, err := net.SplitHostPort(sess.Bridge); err == nil && host != "" {
+		bridgeIP = host
+	}
+	countryCode := ""
+	if bridgeIP != "" {
+		s.mu.Lock()
+		cached := s.bridgeGeoCache[bridgeIP]
+		s.mu.Unlock()
+		if cached != "" {
+			countryCode = cached
+		} else {
+			countryCode = lookupBridgeCountry(ctx, bridgeIP, cfg.Inbound.HTTPPort)
+			if countryCode != "" {
+				s.mu.Lock()
+				s.bridgeGeoCache[bridgeIP] = countryCode
+				s.mu.Unlock()
+			}
+		}
+	}
+	return &GephBridgeStatus{
+		State:       "Connected",
+		BridgeAddr:  sess.Bridge,
+		BridgeIP:    bridgeIP,
+		CountryCode: countryCode,
+		Protocol:    sess.Protocol,
+	}, nil
+}
+
+func lookupBridgeCountry(ctx context.Context, ip string, httpProxyPort int) string {
+	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	tr := &http.Transport{}
+	if httpProxyPort > 0 {
+		if proxyURL, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", httpProxyPort)); err == nil {
+			tr.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+	cli := &http.Client{Timeout: 3 * time.Second, Transport: tr}
+	req, err := http.NewRequestWithContext(lookupCtx, http.MethodGet, "https://ipwho.is/"+url.PathEscape(ip), nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", "looma/0.1")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var payload struct {
+		CountryCode string `json:"country_code"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return ""
+	}
+	return strings.ToUpper(strings.TrimSpace(payload.CountryCode))
 }
 
 func (s *AppService) FetchGephExits(ctx context.Context) ([]geph.ExitLocation, error) {

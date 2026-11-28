@@ -28,6 +28,20 @@ type ExitLocation struct {
 	Load    float64 `json:"load,omitempty"`
 }
 
+type ConnectedSession struct {
+	Protocol string `json:"protocol"`
+	Exit     struct {
+		Country string `json:"country"`
+		City    string `json:"city"`
+	} `json:"exit"`
+	Bridge string `json:"bridge,omitempty"`
+}
+
+type ConnInfo struct {
+	State    string             `json:"state"`
+	Sessions []ConnectedSession `json:"sessions,omitempty"`
+}
+
 // ResolveBinaryPath locates the bundled geph5-client executable across desktop
 // and Android deployments without requiring manual environment configuration.
 // Precedence: explicit path > LOOMA_GEPH5_BIN > MYVPN_GEPH5_BIN > executable
@@ -223,55 +237,75 @@ func (s *Supervisor) Stop() error {
 	return nil
 }
 
-// FetchExits queries geph5-client's nanorpc control_listen endpoint for available exit locations.
-func (s *Supervisor) FetchExits(ctx context.Context, overrideURL string) ([]ExitLocation, error) {
+func (s *Supervisor) callControlRPC(ctx context.Context, overrideURL, method string, out any) error {
 	endpoint := s.controlURL
 	if overrideURL != "" {
 		endpoint = overrideURL
 	}
 	if endpoint == "" {
-		return nil, errors.New("geph control endpoint not set")
+		return errors.New("geph control endpoint not set")
 	}
 
 	payload, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
-		"method":  "net_status",
+		"method":  method,
 		"params":  []any{},
 		"id":      1,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("geph control RPC HTTP %d", resp.StatusCode)
+		return fmt.Errorf("geph control RPC HTTP %d", resp.StatusCode)
 	}
 
 	var rpcResp struct {
-		Result struct {
-			Exits []struct {
-				Country string  `json:"country"`
-				City    string  `json:"city"`
-				Load    float64 `json:"load"`
-			} `json:"exits"`
-		} `json:"result"`
-		Error any `json:"error"`
+		Result json.RawMessage `json:"result"`
+		Error  any             `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return nil, err
+		return err
 	}
 	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("geph control RPC error: %v", rpcResp.Error)
+		return fmt.Errorf("geph control RPC error: %v", rpcResp.Error)
+	}
+	if out != nil && len(rpcResp.Result) > 0 {
+		return json.Unmarshal(rpcResp.Result, out)
+	}
+	return nil
+}
+
+// FetchConnInfo queries geph5-client's conn_info RPC for active bridge & session state.
+func (s *Supervisor) FetchConnInfo(ctx context.Context, overrideURL string) (*ConnInfo, error) {
+	var info ConnInfo
+	if err := s.callControlRPC(ctx, overrideURL, "conn_info", &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// FetchExits queries geph5-client's nanorpc control_listen endpoint for available exit locations.
+func (s *Supervisor) FetchExits(ctx context.Context, overrideURL string) ([]ExitLocation, error) {
+	var result struct {
+		Exits []struct {
+			Country string  `json:"country"`
+			City    string  `json:"city"`
+			Load    float64 `json:"load"`
+		} `json:"exits"`
+	}
+	if err := s.callControlRPC(ctx, overrideURL, "net_status", &result); err != nil {
+		return nil, err
 	}
 
 	seen := map[string]ExitLocation{}
-	for _, ex := range rpcResp.Result.Exits {
+	for _, ex := range result.Exits {
 		key := strings.ToUpper(ex.Country) + ":" + ex.City
 		if prev, ok := seen[key]; !ok || ex.Load < prev.Load {
 			seen[key] = ExitLocation{Country: strings.ToUpper(ex.Country), City: ex.City, Load: ex.Load}

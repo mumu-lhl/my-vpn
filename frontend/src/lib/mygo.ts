@@ -102,6 +102,14 @@ export interface GephExitLocation {
   load?: number;
 }
 
+export interface GephBridgeStatus {
+  state: string;
+  bridge_addr: string;
+  bridge_ip: string;
+  country_code: string;
+  protocol: string;
+}
+
 export interface VPNGateNode {
   id: string;
   host_name: string;
@@ -168,6 +176,8 @@ export const AppService = {
     ),
   TestAllNodes: () => callGo<SpeedTestResult[]>("AppService.TestAllNodes"),
   FetchGephExits: () => callGo<GephExitLocation[]>("AppService.FetchGephExits"),
+  GetGephBridgeStatus: () =>
+    callGo<GephBridgeStatus>("AppService.GetGephBridgeStatus"),
   SelectGephExit: (country: string, city: string) =>
     callGo<void>("AppService.SelectGephExit", country, city),
   GetVPNGateNodes: () => callGo<VPNGateNode[]>("AppService.GetVPNGateNodes"),

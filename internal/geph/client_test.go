@@ -134,3 +134,23 @@ http.server.HTTPServer(('${host}', int('${port}')), H).serve_forever()
 		t.Fatalf("Supervisor.IsRunning() should remain false after FetchExitsOnce")
 	}
 }
+
+func TestFetchConnInfoBridgeIPAndProtocol(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"state":"Connected","sessions":[{"protocol":"sosistab2","exit":{"country":"JP","city":"Tokyo"},"bridge":"203.0.113.55:12345"}]}}`))
+	}))
+	defer srv.Close()
+
+	sup := NewSupervisor("", t.TempDir())
+	info, err := sup.FetchConnInfo(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("FetchConnInfo: %v", err)
+	}
+	if info.State != "Connected" || len(info.Sessions) != 1 {
+		t.Fatalf("unexpected ConnInfo: %+v", info)
+	}
+	if info.Sessions[0].Bridge != "203.0.113.55:12345" || info.Sessions[0].Protocol != "sosistab2" {
+		t.Fatalf("unexpected session: %+v", info.Sessions[0])
+	}
+}

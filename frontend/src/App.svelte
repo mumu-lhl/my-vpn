@@ -18,6 +18,7 @@
   import {
     AppService,
     hasMyGoBridge,
+    type GephBridgeStatus,
     type GephExitLocation,
     type VPNGateNode,
   } from "./lib/mygo";
@@ -69,6 +70,7 @@
   let downBytes = $state(0);
 
   let gephExits = $state<GephExitLocation[]>([]);
+  let gephBridgeStatus = $state<GephBridgeStatus | null>(null);
   let loadingGephExits = $state(false);
   let switchingGephExit = $state(false);
   let gephExitsError = $state("");
@@ -216,6 +218,21 @@
     }
   }
 
+  async function refreshGephBridgeStatus() {
+    const usesGeph =
+      form.chain.hop1.kind === "geph" ||
+      (form.chain.two_hop && form.chain.hop2.kind === "geph");
+    if (!bridgeReady || !connected || !usesGeph) {
+      gephBridgeStatus = null;
+      return;
+    }
+    try {
+      gephBridgeStatus = await AppService.GetGephBridgeStatus();
+    } catch {
+      // Ignore transient RPC errors while geph5-client initializes.
+    }
+  }
+
   // Only sync live connection status & traffic counters; NEVER overwrite form.inboundMode
   // or user-edited fields from background polling or app resume.
   async function syncRuntimeStats() {
@@ -225,6 +242,11 @@
       connected = stats.running;
       upBytes = stats.up_bytes;
       downBytes = stats.down_bytes;
+      if (stats.running) {
+        void refreshGephBridgeStatus();
+      } else {
+        gephBridgeStatus = null;
+      }
     } catch {
       // Ignore transient poll errors while backend is restarting.
     }
@@ -258,12 +280,14 @@
       if (connected) {
         await AppService.Disconnect();
         connected = false;
+        gephBridgeStatus = null;
         backendWarnings = [];
       } else if (await persistConfig(false)) {
         const res = await AppService.Connect();
         backendWarnings = res?.warnings ?? [];
         connected = true;
         lanIP = (await AppService.GetLANInfo()).ip;
+        void refreshGephBridgeStatus();
         void runProbe();
       }
     } catch (err) {
@@ -665,6 +689,7 @@
           {upBytes}
           {downBytes}
           {chainInfo}
+          {gephBridgeStatus}
           {sortedExternalNodes}
           {backendWarnings}
           {probing}

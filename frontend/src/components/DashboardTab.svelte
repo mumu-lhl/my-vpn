@@ -13,9 +13,17 @@
   import type { AppFormState } from "../lib/config_state";
   import { formatGephExitSummary } from "../lib/geph_exits";
   import { formatVPNGateCountry } from "../lib/vpngate";
-  import type { ExternalNode } from "../lib/mygo";
+  import type {
+    ExternalNode,
+    GephBridgeStatus,
+    VPNGateNode,
+  } from "../lib/mygo";
   import type { PlatformUIProfile } from "../lib/platform";
-  import { formatLatency, type ChainProbeResult } from "../lib/probe";
+  import {
+    countryCodeToFlag,
+    formatLatency,
+    type ChainProbeResult,
+  } from "../lib/probe";
   import Select from "./Select.svelte";
   import Toggle from "./Toggle.svelte";
 
@@ -29,6 +37,7 @@
     upBytes: number;
     downBytes: number;
     chainInfo: ChainAnalysis;
+    gephBridgeStatus: GephBridgeStatus | null;
     sortedExternalNodes: ExternalNode[];
     backendWarnings: Array<{ code: string; message: string }>;
     probing: boolean;
@@ -55,6 +64,7 @@
     upBytes,
     downBytes,
     chainInfo,
+    gephBridgeStatus,
     sortedExternalNodes,
     backendWarnings,
     probing,
@@ -179,6 +189,29 @@
     <p class="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-100">
       {chainInfo.label}
     </p>
+    {#if connected && (form.chain.hop1.kind === "geph" || (form.chain.two_hop && form.chain.hop2.kind === "geph"))}
+      <div
+        class="mt-2 inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-200"
+      >
+        <span class="text-zinc-500 dark:text-zinc-400">迷雾通网桥</span>
+        {#if gephBridgeStatus?.state === "Connected"}
+          {#if gephBridgeStatus.bridge_ip}
+            <span>
+              {gephBridgeStatus.country_code
+                ? countryCodeToFlag(gephBridgeStatus.country_code)
+                : "🌐"}
+            </span>
+            <span class="font-mono font-medium">
+              {gephBridgeStatus.bridge_ip}
+            </span>
+          {:else}
+            <span>直连出口</span>
+          {/if}
+        {:else}
+          <span class="text-zinc-500 dark:text-zinc-400">正在建立网桥...</span>
+        {/if}
+      </div>
+    {/if}
     <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
       {connected ? "点击按钮断开当前连接" : "点击按钮立即建立加密或防干扰连接"}
     </p>
