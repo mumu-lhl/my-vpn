@@ -361,7 +361,9 @@
           >
             <span class="flex min-w-0 items-center gap-2">
               <span class="text-base leading-none">{gephSummary.flag}</span>
-              <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
+              <span
+                class="truncate font-medium text-zinc-800 dark:text-zinc-200"
+              >
                 {gephSummary.label}
               </span>
             </span>
@@ -375,7 +377,9 @@
           >
             <span class="flex min-w-0 items-center gap-2">
               <span class="text-base leading-none">{vpngateSummary.flag}</span>
-              <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
+              <span
+                class="truncate font-medium text-zinc-800 dark:text-zinc-200"
+              >
                 {vpngateSummary.label}
               </span>
             </span>

@@ -45,7 +45,9 @@ export function extractVPNGateCountries(
       map.set(code, { code, name, flag, count: 1 });
     }
   }
-  return [...map.values()].sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+  return [...map.values()].sort(
+    (a, b) => b.count - a.count || a.code.localeCompare(b.code),
+  );
 }
 
 export function filterVPNGateNodes(

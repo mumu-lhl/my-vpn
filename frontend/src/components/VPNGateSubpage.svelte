@@ -114,7 +114,8 @@
     <div
       class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
     >
-      VPNGate API 需要经由代理拉取。当前未连接，下方展示本地缓存；如需刷新最新列表，请先连接任意可用线路后再点击右上角刷新图标。
+      VPNGate API
+      需要经由代理拉取。当前未连接，下方展示本地缓存；如需刷新最新列表，请先连接任意可用线路后再点击右上角刷新图标。
     </div>
   {/if}
 
@@ -171,8 +172,12 @@
     class="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
   >
     {#if visibleNodes.length === 0}
-      <div class="px-4 py-10 text-center text-xs text-zinc-500 dark:text-zinc-400">
-        {loading ? "正在拉取 VPNGate 节点列表..." : "暂无节点数据，连接代理后点击右上角刷新图标拉取"}
+      <div
+        class="px-4 py-10 text-center text-xs text-zinc-500 dark:text-zinc-400"
+      >
+        {loading
+          ? "正在拉取 VPNGate 节点列表..."
+          : "暂无节点数据，连接代理后点击右上角刷新图标拉取"}
       </div>
     {:else}
       <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -194,7 +199,9 @@
               <span class="text-xl leading-none">{country.flag}</span>
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
-                  <p class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  <p
+                    class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100"
+                  >
                     {country.name} · {node.host_name || node.ip}
                   </p>
                   <span
@@ -203,8 +210,12 @@
                     {node.network}
                   </span>
                 </div>
-                <p class="mt-0.5 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {node.ip}:{node.server_port} · 分数 {formatVPNGateScore(node.score)} · 流量 {formatVPNGateTraffic(node.total_traffic)}
+                <p
+                  class="mt-0.5 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400"
+                >
+                  {node.ip}:{node.server_port} · 分数 {formatVPNGateScore(
+                    node.score,
+                  )} · 流量 {formatVPNGateTraffic(node.total_traffic)}
                 </p>
               </div>
             </div>

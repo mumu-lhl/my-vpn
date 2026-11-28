@@ -100,7 +100,10 @@
     <div
       class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
     >
-      <span>尚未填写迷雾通账号 Secret，填写后即可在不连接 VPN 的情况下拉取实时出口列表。</span>
+      <span
+        >尚未填写迷雾通账号 Secret，填写后即可在不连接 VPN
+        的情况下拉取实时出口列表。</span
+      >
       <button
         type="button"
         onclick={onOpenProtocolsSettings}
@@ -149,8 +152,12 @@
       </button>
 
       {#if sortedExits.length === 0}
-        <div class="px-4 py-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
-          {loading ? "正在拉取迷雾通实时出口列表..." : "暂无出口节点数据，可点击右上角刷新图标重试"}
+        <div
+          class="px-4 py-8 text-center text-xs text-zinc-500 dark:text-zinc-400"
+        >
+          {loading
+            ? "正在拉取迷雾通实时出口列表..."
+            : "暂无出口节点数据，可点击右上角刷新图标重试"}
         </div>
       {:else}
         {#each sortedExits as ex}
@@ -174,8 +181,12 @@
                 {countryCodeToFlag(ex.country)}
               </span>
               <div class="min-w-0">
-                <p class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  {formatGephCountryName(ex.country)}{ex.city ? ` · ${ex.city}` : ""}
+                <p
+                  class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100"
+                >
+                  {formatGephCountryName(ex.country)}{ex.city
+                    ? ` · ${ex.city}`
+                    : ""}
                 </p>
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
                   {ex.country.toUpperCase()}
@@ -185,7 +196,8 @@
 
             <div class="flex shrink-0 items-center gap-2.5">
               <span
-                class="rounded-full px-2 py-0.5 font-mono text-[11px] font-medium {loadInfo.level === 'low'
+                class="rounded-full px-2 py-0.5 font-mono text-[11px] font-medium {loadInfo.level ===
+                'low'
                   ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                   : loadInfo.level === 'medium'
                     ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
