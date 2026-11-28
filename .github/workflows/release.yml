@@ -24,6 +24,7 @@ jobs:
     outputs:
       build: ${{ steps.plan.outputs.build }}
       nightly-exists: ${{ steps.plan.outputs.nightly-exists }}
+      geph5-sha: ${{ steps.plan.outputs.geph5-sha }}
     steps:
       - id: plan
         name: Plan nightly or release build
@@ -58,6 +59,8 @@ jobs:
             esac
           fi
           echo 'build=true' >> "$GITHUB_OUTPUT"
+          geph5_sha=$(git ls-remote https://github.com/geph-official/geph5.git refs/heads/master | awk '{print $1}')
+          echo "geph5-sha=${geph5_sha:-unknown}" >> "$GITHUB_OUTPUT"
 
   build-linux:
     needs: prepare
@@ -78,12 +81,23 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('frontend/bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - name: Install Linux & Rust musl dependencies
+      - name: Cache prebuilt geph5-client binary (Linux musl)
+        id: geph5-bin-cache
+        uses: actions/cache@v6
+        with:
+          path: bin/geph5-client
+          key: ${{ runner.os }}-geph5-bin-linux-${{ needs.prepare.outputs.geph5-sha }}-${{ hashFiles('third_party/geph5-build/build.sh') }}
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev musl-tools
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+      - name: Install Rust musl target for geph5-client
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y musl-tools
           rustup target add x86_64-unknown-linux-musl
       - name: Cache Cargo registry and geph5-client target
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6
         with:
           path: |
@@ -93,6 +107,7 @@ jobs:
           key: ${{ runner.os }}-geph5-linux-cargo-${{ hashFiles('third_party/geph5-build/build.sh') }}
           restore-keys: ${{ runner.os }}-geph5-linux-cargo-
       - name: Build geph5-client (Linux musl)
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
         run: make build-geph5-linux
       - name: Build frontend
         working-directory: frontend
@@ -169,19 +184,28 @@ jobs:
           fi
           echo "Using Android NDK: $ndk"
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+      - name: Cache prebuilt libgeph5.so (Android arm64-v8a)
+        id: geph5-bin-cache
+        uses: actions/cache@v6
+        with:
+          path: .mygo/android/app/src/main/jniLibs/arm64-v8a/libgeph5.so
+          key: ${{ runner.os }}-geph5-bin-android-${{ needs.prepare.outputs.geph5-sha }}-${{ hashFiles('third_party/geph5-build/build.sh') }}
       - name: Cache cargo-ndk binary
         id: cargo-ndk-cache
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-ndk
           key: ${{ runner.os }}-cargo-ndk-v1
       - name: Setup Rust Android toolchain and cargo-ndk
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
         run: |
           rustup target add aarch64-linux-android
           if [[ "${{ steps.cargo-ndk-cache.outputs.cache-hit }}" != 'true' ]]; then
             cargo install cargo-ndk --locked
           fi
       - name: Cache Cargo registry and geph5-client Android target
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v6
         with:
           path: |
@@ -191,6 +215,7 @@ jobs:
           key: ${{ runner.os }}-geph5-android-cargo-${{ hashFiles('third_party/geph5-build/build.sh') }}
           restore-keys: ${{ runner.os }}-geph5-android-cargo-
       - name: Build and stage geph5-client (Android arm64-v8a libgeph5.so)
+        if: steps.geph5-bin-cache.outputs.cache-hit != 'true'
         run: make build-geph5-android
       - name: Build frontend
         working-directory: frontend
