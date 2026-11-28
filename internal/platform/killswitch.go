@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	KillSwitchTableName   = "myvpn_killswitch"
+	KillSwitchTableName   = "looma_killswitch"
 	KillSwitchRoutingMark = 0x2026
 )
 
@@ -30,7 +30,7 @@ type KillSwitchOptions struct {
 func GenerateKillSwitchNFT(opts KillSwitchOptions) string {
 	tun := strings.TrimSpace(opts.TUNName)
 	if tun == "" {
-		tun = "myvpn0"
+		tun = "looma0"
 	}
 	mark := opts.RoutingMark
 	if mark <= 0 {

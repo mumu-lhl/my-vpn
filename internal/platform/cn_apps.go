@@ -127,7 +127,6 @@ var internationalNeverExclude = []string{
 	"com.zhiliaoapp.musically",
 	"com.ss.android.ugc.trill",
 	"com.tencent.ig",
-	"io.github.mumulhl.myvpn",
 }
 
 func DetectChinaApps(apps []InstalledApp) []DetectedCNApp {

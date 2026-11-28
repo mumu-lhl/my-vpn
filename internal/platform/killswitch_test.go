@@ -8,19 +8,19 @@ import (
 
 func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 	script := GenerateKillSwitchNFT(KillSwitchOptions{
-		TUNName:        "myvpn0",
+		TUNName:        "looma0",
 		RoutingMark:    KillSwitchRoutingMark,
 		AllowLAN:       true,
-		BypassCgroupV2: "user.slice/user-1000.slice/myvpn-geph5.scope",
+		BypassCgroupV2: "user.slice/user-1000.slice/looma-geph5.scope",
 		BypassGID:      987,
 	})
 	for _, want := range []string{
-		"table inet myvpn_killswitch",
+		"table inet looma_killswitch",
 		"policy drop;",
 		`oifname "lo" accept`,
-		`oifname "myvpn0" accept`,
+		`oifname "looma0" accept`,
 		"meta mark 0x2026 accept",
-		`socket cgroupv2 level 3 "user.slice/user-1000.slice/myvpn-geph5.scope" accept`,
+		`socket cgroupv2 level 3 "user.slice/user-1000.slice/looma-geph5.scope" accept`,
 		"meta skgid 987 accept",
 		"192.168.0.0/16",
 	} {
@@ -29,7 +29,7 @@ func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 		}
 	}
 
-	noLAN := GenerateKillSwitchNFT(KillSwitchOptions{TUNName: "myvpn0", AllowLAN: false})
+	noLAN := GenerateKillSwitchNFT(KillSwitchOptions{TUNName: "looma0", AllowLAN: false})
 	if strings.Contains(noLAN, "192.168.0.0/16") {
 		t.Fatalf("LAN subnet must not be allowed when AllowLAN=false")
 	}
@@ -45,7 +45,7 @@ func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 	if mgr.Active() {
 		t.Fatalf("expected inactive initially")
 	}
-	if err := mgr.Enable(context.Background(), KillSwitchOptions{TUNName: "myvpn0", AllowLAN: true}); err != nil {
+	if err := mgr.Enable(context.Background(), KillSwitchOptions{TUNName: "looma0", AllowLAN: true}); err != nil {
 		t.Fatalf("Enable: %v", err)
 	}
 	if !mgr.Active() {
@@ -57,7 +57,7 @@ func TestGenerateKillSwitchNFTAndLifecycleAC18(t *testing.T) {
 	if mgr.Active() {
 		t.Fatalf("expected inactive after Disable")
 	}
-	if len(executed) != 2 || !strings.Contains(executed[1], "delete table inet myvpn_killswitch") {
+	if len(executed) != 2 || !strings.Contains(executed[1], "delete table inet looma_killswitch") {
 		t.Fatalf("unexpected nft calls: %+v", executed)
 	}
 }
