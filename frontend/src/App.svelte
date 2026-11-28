@@ -139,6 +139,7 @@
     options?: {
       dashboardSubpage?: DashboardSubpage;
       settingsSubpage?: SettingsSubpage;
+      keepBanner?: boolean;
     },
   ) {
     const nextDashSub: DashboardSubpage =
@@ -151,6 +152,10 @@
       settingsSubpage === nextSettSub
     ) {
       return;
+    }
+    if (!options?.keepBanner) {
+      statusError = "";
+      statusNotice = "";
     }
     activeTab = tab;
     dashboardSubpage = nextDashSub;
@@ -400,7 +405,7 @@
         nextCountry === "auto"
           ? "已切换为迷雾通自动选择出口"
           : `已切换迷雾通出口：${nextCountry}${nextCity ? ` · ${nextCity}` : ""}`;
-      navigateTo("dashboard", { dashboardSubpage: null });
+      navigateTo("dashboard", { dashboardSubpage: null, keepBanner: true });
     } catch (err) {
       form.gephCountry = prevCountry;
       form.gephCity = prevCity;
@@ -471,7 +476,7 @@
       form = hydrateFormState(cfg, form);
       await syncRuntimeStats();
       statusNotice = `已选择 VPNGate 节点：${node.country_short} · ${node.host_name || node.ip}`;
-      navigateTo("dashboard", { dashboardSubpage: null });
+      navigateTo("dashboard", { dashboardSubpage: null, keepBanner: true });
     } catch (err) {
       form.vpngateNode = prevNode;
       vpngateError = `切换 VPNGate 节点失败：${errMsg(err)}`;
@@ -659,6 +664,8 @@
     }
 
     const onPopState = (event: PopStateEvent) => {
+      statusError = "";
+      statusNotice = "";
       const st = event.state as {
         tab?: AppTab;
         dashboardSubpage?: DashboardSubpage;
