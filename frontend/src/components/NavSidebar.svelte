@@ -34,7 +34,7 @@
       type="button"
       class="flex flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium transition md:flex-none md:flex-row md:gap-2.5 md:text-sm {activeTab ===
       item.id
-        ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
         : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'}"
       onclick={() => onSelectTab(item.id)}
     >
