@@ -602,11 +602,5 @@
         </div>
       {/each}
     </div>
-  {:else}
-    <p class="text-xs text-zinc-500 dark:text-zinc-400">
-      点击「检测延迟」查看{form.chain.two_hop && !isDirectBypass
-        ? "每一跳"
-        : "当前出口"}的连通延迟、归属地与出口 IP。
-    </p>
   {/if}
 </section>
