@@ -472,18 +472,60 @@ func (s *AppService) FetchGephExits(ctx context.Context) ([]geph.ExitLocation, e
 	if strings.TrimSpace(cfg.Geph.Secret) == "" {
 		return nil, fmt.Errorf("请先填写迷雾通账号 Secret 并保存")
 	}
-	if !s.geph.IsRunning() {
-		return nil, fmt.Errorf("请先在主页选择迷雾通并点击连接，连上后再刷新实时出口列表")
+	if s.geph.IsRunning() {
+		ctrlPort := cfg.Geph.ControlPort
+		if ctrlPort <= 0 {
+			ctrlPort = 19910
+		}
+		exits, err := s.geph.FetchExits(ctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort))
+		if err != nil {
+			return nil, fmt.Errorf("迷雾通控制端口暂不可达，请稍后重试")
+		}
+		return exits, nil
 	}
-	ctrlPort := cfg.Geph.ControlPort
-	if ctrlPort <= 0 {
-		ctrlPort = 19910
-	}
-	exits, err := s.geph.FetchExits(ctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort))
+	probeCtx, cancel := context.WithTimeout(ctx, 18*time.Second)
+	defer cancel()
+	exits, err := s.geph.FetchExitsOnce(probeCtx, cfg.Geph)
 	if err != nil {
-		return nil, fmt.Errorf("迷雾通控制端口暂不可达，请确认已成功连接迷雾通后再试")
+		return nil, fmt.Errorf("拉取迷雾通出口列表失败：%w", err)
 	}
 	return exits, nil
+}
+
+// SelectGephExit persists the selected Geph5 exit country/city ("auto" for automatic
+// selection) and smoothly reconnects if the tunnel is currently running with Geph.
+func (s *AppService) SelectGephExit(ctx context.Context, country, city string) error {
+	nextCountry := strings.TrimSpace(country)
+	nextCity := strings.TrimSpace(city)
+	if nextCountry == "" || strings.EqualFold(nextCountry, "auto") {
+		nextCountry = "auto"
+		nextCity = ""
+	} else {
+		nextCountry = strings.ToUpper(nextCountry)
+	}
+
+	cfg := s.store.Get()
+	changed := cfg.Geph.ExitCountry != nextCountry || cfg.Geph.ExitCity != nextCity
+	cfg.Geph.ExitCountry = nextCountry
+	cfg.Geph.ExitCity = nextCity
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+
+	usesGeph := cfg.Chain.Hop1.Kind == config.HopGeph || (cfg.Chain.TwoHop && cfg.Chain.Hop2.Kind == config.HopGeph)
+	if changed && usesGeph && s.GetStats().Running {
+		if err := s.Disconnect(); err != nil {
+			s.notifyStateChange()
+			return fmt.Errorf("disconnect before switching geph exit: %w", err)
+		}
+		if _, err := s.Connect(ctx); err != nil {
+			s.notifyStateChange()
+			return fmt.Errorf("reconnect with new geph exit: %w", err)
+		}
+		return nil
+	}
+	s.notifyStateChange()
+	return nil
 }
 
 func (s *AppService) GetClassicCNApps() []platform.ClassicCNApp {

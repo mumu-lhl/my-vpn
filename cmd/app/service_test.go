@@ -238,3 +238,25 @@ func TestAppServiceAndroidVPNLifecycleAndBridgeMethods(t *testing.T) {
 		t.Fatalf("expected Connect error when VPN permission is denied")
 	}
 }
+
+func TestAppServiceSelectGephExitPersistsCountryAndCityACGEPH04(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+	if err := svc.SelectGephExit(context.Background(), "jp", "Tokyo"); err != nil {
+		t.Fatalf("SelectGephExit(jp, Tokyo): %v", err)
+	}
+	cfg := svc.GetConfig()
+	if cfg.Geph.ExitCountry != "JP" || cfg.Geph.ExitCity != "Tokyo" {
+		t.Fatalf("expected JP/Tokyo, got %q/%q", cfg.Geph.ExitCountry, cfg.Geph.ExitCity)
+	}
+
+	if err := svc.SelectGephExit(context.Background(), "auto", ""); err != nil {
+		t.Fatalf("SelectGephExit(auto): %v", err)
+	}
+	cfg = svc.GetConfig()
+	if cfg.Geph.ExitCountry != "auto" || cfg.Geph.ExitCity != "" {
+		t.Fatalf("expected auto/empty, got %q/%q", cfg.Geph.ExitCountry, cfg.Geph.ExitCity)
+	}
+}

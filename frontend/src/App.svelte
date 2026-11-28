@@ -28,9 +28,12 @@
   import NavSidebar, { type AppTab } from "./components/NavSidebar.svelte";
   import StatusBanners from "./components/StatusBanners.svelte";
   import DashboardTab from "./components/DashboardTab.svelte";
+  import GephExitsSubpage from "./components/GephExitsSubpage.svelte";
   import SettingsTab, {
     type SettingsSubpage,
   } from "./components/SettingsTab.svelte";
+
+  type DashboardSubpage = null | "geph-exits";
 
   const THEME_STORAGE_KEY = "looma_theme_mode";
 
@@ -44,6 +47,7 @@
   }
 
   let activeTab = $state<AppTab>("dashboard");
+  let dashboardSubpage = $state<DashboardSubpage>(null);
   let settingsSubpage = $state<SettingsSubpage>(null);
   let themeMode = $state<ThemeMode>(loadInitialTheme());
   let runtimePlatform = $state<RuntimePlatform>(detectFallbackPlatform());
@@ -63,6 +67,10 @@
   let downBytes = $state(0);
 
   let gephExits = $state<GephExitLocation[]>([]);
+  let loadingGephExits = $state(false);
+  let switchingGephExit = $state(false);
+  let gephExitsError = $state("");
+  let gephExitsUpdatedAt = $state(0);
   let subName = $state("");
   let subURL = $state("");
   let testingNodes = $state(false);
@@ -99,29 +107,60 @@
     }
   }
 
-  function buildRouteHash(tab: AppTab, sub: SettingsSubpage): string {
+  function buildRouteHash(
+    tab: AppTab,
+    dashSub: DashboardSubpage,
+    settSub: SettingsSubpage,
+  ): string {
     if (tab === "settings") {
-      return sub ? `#settings/${sub}` : "#settings";
+      return settSub ? `#settings/${settSub}` : "#settings";
     }
-    return "#dashboard";
+    return dashSub ? `#dashboard/${dashSub}` : "#dashboard";
   }
 
-  function navigateTo(tab: AppTab, sub: SettingsSubpage = null) {
-    const nextSub = tab === "settings" ? sub : null;
-    if (activeTab === tab && settingsSubpage === nextSub) return;
+  function navigateTo(
+    tab: AppTab,
+    options?: {
+      dashboardSubpage?: DashboardSubpage;
+      settingsSubpage?: SettingsSubpage;
+    },
+  ) {
+    const nextDashSub: DashboardSubpage =
+      tab === "dashboard" ? (options?.dashboardSubpage ?? null) : null;
+    const nextSettSub: SettingsSubpage =
+      tab === "settings" ? (options?.settingsSubpage ?? null) : null;
+    if (
+      activeTab === tab &&
+      dashboardSubpage === nextDashSub &&
+      settingsSubpage === nextSettSub
+    ) {
+      return;
+    }
     activeTab = tab;
-    settingsSubpage = nextSub;
-    if (typeof window !== "undefined" && typeof window.history?.pushState === "function") {
+    dashboardSubpage = nextDashSub;
+    settingsSubpage = nextSettSub;
+    if (
+      typeof window !== "undefined" &&
+      typeof window.history?.pushState === "function"
+    ) {
       window.history.pushState(
-        { tab, subpage: nextSub },
+        {
+          tab,
+          dashboardSubpage: nextDashSub,
+          settingsSubpage: nextSettSub,
+        },
         "",
-        buildRouteHash(tab, nextSub),
+        buildRouteHash(tab, nextDashSub, nextSettSub),
       );
     }
   }
 
   function openSettingsSubpage(sub: SettingsSubpage) {
-    navigateTo("settings", sub);
+    navigateTo("settings", { settingsSubpage: sub });
+  }
+
+  function openDashboardGephExits() {
+    navigateTo("dashboard", { dashboardSubpage: "geph-exits" });
   }
 
   async function persistConfig(showNotice = false): Promise<boolean> {
@@ -268,16 +307,64 @@
   }
 
   async function loadGephExits() {
+    if (loadingGephExits) return;
     if (!bridgeReady) {
-      statusNotice = "请先在客户端连接迷雾通后再刷新实时出口列表";
+      gephExitsError = "浏览器预览模式下无法连接迷雾通节点接口";
       return;
     }
-    statusError = "";
+    if (!form.gephSecret.trim()) {
+      gephExitsError = "";
+      return;
+    }
+    loadingGephExits = true;
+    gephExitsError = "";
     try {
       gephExits = await AppService.FetchGephExits();
-      statusNotice = `已刷新 ${gephExits.length} 个可用出口`;
+      gephExitsUpdatedAt = Date.now();
     } catch (err) {
-      statusError = `获取出口列表失败：${errMsg(err)}`;
+      gephExitsError = errMsg(err);
+    } finally {
+      loadingGephExits = false;
+    }
+  }
+
+  async function selectGephExit(country: string, city: string) {
+    if (switchingGephExit) return;
+    const prevCountry = form.gephCountry;
+    const prevCity = form.gephCity;
+    const nextCountry =
+      !country || country.toLowerCase() === "auto"
+        ? "auto"
+        : country.toUpperCase();
+    const nextCity = nextCountry === "auto" ? "" : city;
+
+    form.gephCountry = nextCountry;
+    form.gephCity = nextCity;
+    statusError = "";
+    statusNotice = "";
+
+    if (!bridgeReady) {
+      navigateTo("dashboard", { dashboardSubpage: null });
+      return;
+    }
+
+    switchingGephExit = true;
+    try {
+      await AppService.SelectGephExit(nextCountry, nextCity);
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      await syncRuntimeStats();
+      statusNotice =
+        nextCountry === "auto"
+          ? "已切换为迷雾通自动选择出口"
+          : `已切换迷雾通出口：${nextCountry}${nextCity ? ` · ${nextCity}` : ""}`;
+      navigateTo("dashboard", { dashboardSubpage: null });
+    } catch (err) {
+      form.gephCountry = prevCountry;
+      form.gephCity = prevCity;
+      gephExitsError = `切换出口失败：${errMsg(err)}`;
+    } finally {
+      switchingGephExit = false;
     }
   }
 
@@ -387,21 +474,33 @@
     }
 
     const onPopState = (event: PopStateEvent) => {
-      const st = event.state as { tab?: AppTab; subpage?: SettingsSubpage } | null;
+      const st = event.state as {
+        tab?: AppTab;
+        dashboardSubpage?: DashboardSubpage;
+        settingsSubpage?: SettingsSubpage;
+      } | null;
       if (st && (st.tab === "dashboard" || st.tab === "settings")) {
         activeTab = st.tab;
-        settingsSubpage = st.tab === "settings" ? (st.subpage ?? null) : null;
+        dashboardSubpage =
+          st.tab === "dashboard" ? (st.dashboardSubpage ?? null) : null;
+        settingsSubpage =
+          st.tab === "settings" ? (st.settingsSubpage ?? null) : null;
       } else {
         activeTab = "dashboard";
+        dashboardSubpage = null;
         settingsSubpage = null;
       }
     };
     if (typeof window !== "undefined") {
       if (typeof window.history?.replaceState === "function") {
         window.history.replaceState(
-          { tab: activeTab, subpage: settingsSubpage },
+          {
+            tab: activeTab,
+            dashboardSubpage,
+            settingsSubpage,
+          },
           "",
-          buildRouteHash(activeTab, settingsSubpage),
+          buildRouteHash(activeTab, dashboardSubpage, settingsSubpage),
         );
       }
       window.addEventListener("popstate", onPopState);
@@ -433,7 +532,7 @@
   <NavSidebar
     {activeTab}
     {themeMode}
-    onSelectTab={(tab) => navigateTo(tab, null)}
+    onSelectTab={(tab) => navigateTo(tab)}
     onSelectTheme={selectTheme}
   />
 
@@ -446,30 +545,46 @@
     />
 
     {#if activeTab === "dashboard"}
-      <DashboardTab
-        {form}
-        {platformUI}
-        {connected}
-        {busyConnect}
-        {switchingMode}
-        {lanIP}
-        {upBytes}
-        {downBytes}
-        {chainInfo}
-        {sortedExternalNodes}
-        {backendWarnings}
-        {activeProbeURL}
-        {probing}
-        {probeResult}
-        onToggleConnect={toggleConnect}
-        onSetInboundMode={setInboundMode}
-        onChainChange={() => void persistConfig(false)}
-        onAllowLANChange={() => void persistConfig(false)}
-        onKillSwitchChange={() => void onToggleKillSwitch()}
-        onOpenAndroidVpnSettings={openAndroidVpnSettings}
-        onOpenSettingsSubpage={(sub) => openSettingsSubpage(sub)}
-        onRunProbe={runProbe}
-      />
+      {#if dashboardSubpage === "geph-exits"}
+        <GephExitsSubpage
+          {form}
+          {gephExits}
+          loading={loadingGephExits}
+          switching={switchingGephExit}
+          errorMessage={gephExitsError}
+          lastUpdatedAt={gephExitsUpdatedAt}
+          onBack={() => navigateTo("dashboard", { dashboardSubpage: null })}
+          onRefresh={loadGephExits}
+          onSelectExit={selectGephExit}
+          onOpenProtocolsSettings={() => openSettingsSubpage("protocols")}
+        />
+      {:else}
+        <DashboardTab
+          {form}
+          {platformUI}
+          {connected}
+          {busyConnect}
+          {switchingMode}
+          {lanIP}
+          {upBytes}
+          {downBytes}
+          {chainInfo}
+          {sortedExternalNodes}
+          {backendWarnings}
+          {activeProbeURL}
+          {probing}
+          {probeResult}
+          onToggleConnect={toggleConnect}
+          onSetInboundMode={setInboundMode}
+          onChainChange={() => void persistConfig(false)}
+          onAllowLANChange={() => void persistConfig(false)}
+          onKillSwitchChange={() => void onToggleKillSwitch()}
+          onOpenAndroidVpnSettings={openAndroidVpnSettings}
+          onOpenSettingsSubpage={(sub) => openSettingsSubpage(sub)}
+          onOpenGephExits={openDashboardGephExits}
+          onRunProbe={runProbe}
+        />
+      {/if}
     {:else}
       <SettingsTab
         {form}
@@ -479,17 +594,17 @@
         {builtinProbePresets}
         {customProbeValid}
         {themeMode}
-        {gephExits}
         bind:subName
         bind:subURL
         {sortedExternalNodes}
         {testingNodes}
-        onSelectSubpage={(sub) => navigateTo("settings", sub)}
+        onSelectSubpage={(sub) =>
+          navigateTo("settings", { settingsSubpage: sub })}
         onAutoSave={() => void persistConfig(false)}
         onDebouncedAutoSave={scheduleDebouncedSave}
         onSave={() => void persistConfig(true)}
         onSetTheme={selectTheme}
-        onLoadGephExits={loadGephExits}
+        onOpenGephExits={openDashboardGephExits}
         onImportSub={importSub}
         onTestAllNodes={testAllNodes}
         onOpenAndroidVpnSettings={openAndroidVpnSettings}

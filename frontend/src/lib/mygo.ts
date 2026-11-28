@@ -143,6 +143,8 @@ export const AppService = {
     ),
   TestAllNodes: () => callGo<SpeedTestResult[]>("AppService.TestAllNodes"),
   FetchGephExits: () => callGo<GephExitLocation[]>("AppService.FetchGephExits"),
+  SelectGephExit: (country: string, city: string) =>
+    callGo<void>("AppService.SelectGephExit", country, city),
   GetClassicCNApps: () => callGo<ClassicCNApp[]>("AppService.GetClassicCNApps"),
   DetectCNApps: (apps: InstalledApp[]) =>
     callGo<DetectedCNApp[]>("AppService.DetectCNApps", apps),

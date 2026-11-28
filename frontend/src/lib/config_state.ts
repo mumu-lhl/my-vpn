@@ -14,6 +14,7 @@ export interface AppFormState {
   chain: ChainConfig;
   gephSecret: string;
   gephCountry: string;
+  gephCity: string;
   psiphonRegion: string;
   warpMode: "auto" | "wg" | "awg" | "masque";
   warpLicense: string;
@@ -89,6 +90,7 @@ export function createDefaultFormState(): AppFormState {
     },
     gephSecret: "",
     gephCountry: "auto",
+    gephCity: "",
     psiphonRegion: "auto",
     warpMode: "auto",
     warpLicense: "",
@@ -174,6 +176,7 @@ export function hydrateFormState(
   if (cfg.geph) {
     next.gephSecret = cfg.geph.secret ?? "";
     next.gephCountry = cfg.geph.exit_country ?? "auto";
+    next.gephCity = cfg.geph.exit_city ?? "";
   }
   if (cfg.psiphon) {
     next.psiphonRegion = cfg.psiphon.egress_region ?? "auto";
@@ -273,6 +276,7 @@ export function buildConfigPayload(
       ...base.geph,
       secret: form.gephSecret,
       exit_country: form.gephCountry,
+      exit_city: form.gephCity,
     },
     psiphon: {
       ...base.psiphon,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -294,4 +295,114 @@ func (s *Supervisor) IsRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.cmd != nil && s.cmd.Process != nil
+}
+
+// FetchExitsOnce temporarily spawns an isolated geph5-client instance on ephemeral
+// loopback ports, polls its control_listen RPC for exit locations, and terminates
+// the temporary process before returning.
+func (s *Supervisor) FetchExitsOnce(ctx context.Context, cfg config.GephConfig) ([]ExitLocation, error) {
+	if strings.TrimSpace(cfg.Secret) == "" {
+		return nil, errors.New("geph secret is required")
+	}
+	binPath := s.BinaryPath()
+	if binPath == "" {
+		return nil, errors.New("geph5-client binary not found")
+	}
+
+	socksPort, err := freeLoopbackPort()
+	if err != nil {
+		return nil, fmt.Errorf("allocate temporary socks port: %w", err)
+	}
+	ctrlPort, err := freeLoopbackPort()
+	if err != nil {
+		return nil, fmt.Errorf("allocate temporary control port: %w", err)
+	}
+
+	probeCfg := cfg
+	probeCfg.LocalSocksPort = socksPort
+	probeCfg.ControlPort = ctrlPort
+	probeCfg.ExitCountry = "auto"
+	probeCfg.ExitCity = ""
+
+	raw, err := GenerateYAML(probeCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpDir, err := os.MkdirTemp("", "looma-geph-probe-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfgPath := filepath.Join(tmpDir, "geph5-client.yaml")
+	if err := os.WriteFile(cfgPath, raw, 0o600); err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, binPath, "-c", cfgPath)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start temporary geph5-client: %w", err)
+	}
+
+	exitCh := make(chan error, 1)
+	go func() {
+		exitCh <- cmd.Wait()
+	}()
+	defer func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		select {
+		case <-exitCh:
+		case <-time.After(2 * time.Second):
+		}
+	}()
+
+	ctrlURL := fmt.Sprintf("http://127.0.0.1:%d", ctrlPort)
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastErr error
+	var emptySuccesses int
+	for {
+		exits, err := s.FetchExits(ctx, ctrlURL)
+		if err == nil {
+			if len(exits) > 0 {
+				return exits, nil
+			}
+			emptySuccesses++
+			if emptySuccesses >= 6 {
+				return exits, nil
+			}
+		} else {
+			lastErr = err
+		}
+
+		select {
+		case waitErr := <-exitCh:
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			if waitErr != nil {
+				return nil, fmt.Errorf("geph5-client exited early: %w", waitErr)
+			}
+			return nil, errors.New("geph5-client exited before returning exits")
+		case <-ctx.Done():
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
 }

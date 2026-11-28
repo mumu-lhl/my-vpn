@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mumu-lhl/looma/internal/config"
 )
@@ -77,5 +78,59 @@ func TestResolveBinaryPathPrecedence(t *testing.T) {
 	t.Setenv("LOOMA_GEPH5_BIN", "")
 	if got := ResolveBinaryPath(""); got != legacyEnvBin {
 		t.Fatalf("legacy env fallback = %q, want %q", got, legacyEnvBin)
+	}
+}
+
+func TestFetchExitsOnceWithoutConnectACGEPH01(t *testing.T) {
+	// Spawn a lightweight fake geph5-client using python3/sh that reads -c <yaml>,
+	// serves net_status on control_listen, and verifies FetchExitsOnce cleans it up.
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "fake.pid")
+	fakeBin := filepath.Join(dir, "geph5-client")
+	script := `#!/bin/sh
+set -eu
+cfg=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -c) cfg="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+addr=$(awk '/control_listen:/{print $2}' "$cfg" | tr -d '"')
+host="${addr%:*}"
+port="${addr##*:}"
+echo "$$" > "` + pidFile + `"
+exec python3 -c "
+import http.server, json, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get('Content-Length', 0)))
+        body = json.dumps({'jsonrpc':'2.0','id':1,'result':{'exits':[{'country':'jp','city':'Tokyo','load':0.24},{'country':'sg','city':'Singapore','load':0.62}]}}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *args): pass
+http.server.HTTPServer(('${host}', int('${port}')), H).serve_forever()
+"
+`
+	if err := os.WriteFile(fakeBin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake geph5-client: %v", err)
+	}
+
+	sup := NewSupervisor(fakeBin, dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	exits, err := sup.FetchExitsOnce(ctx, config.GephConfig{Secret: "test-secret"})
+	if err != nil {
+		t.Fatalf("FetchExitsOnce failed: %v", err)
+	}
+	if len(exits) != 2 || exits[0].Country != "JP" || exits[0].City != "Tokyo" || exits[1].Country != "SG" {
+		t.Fatalf("unexpected exits: %+v", exits)
+	}
+	if sup.IsRunning() {
+		t.Fatalf("Supervisor.IsRunning() should remain false after FetchExitsOnce")
 	}
 }

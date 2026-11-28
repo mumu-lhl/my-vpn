@@ -11,6 +11,7 @@
   } from "@lucide/svelte";
   import { formatBytes, type ChainAnalysis, type HopKind } from "../lib/chain";
   import type { AppFormState } from "../lib/config_state";
+  import { formatGephExitSummary } from "../lib/geph_exits";
   import type { ExternalNode } from "../lib/mygo";
   import type { PlatformUIProfile } from "../lib/platform";
   import { formatLatency, type ChainProbeResult } from "../lib/probe";
@@ -38,6 +39,7 @@
     onKillSwitchChange: () => void;
     onOpenAndroidVpnSettings: () => void;
     onOpenSettingsSubpage: (sub: "protocols" | "routing") => void;
+    onOpenGephExits: () => void;
     onRunProbe: () => void;
   }
 
@@ -63,10 +65,14 @@
     onKillSwitchChange,
     onOpenAndroidVpnSettings,
     onOpenSettingsSubpage,
+    onOpenGephExits,
     onRunProbe,
   }: Props = $props();
 
   let isDirectBypass = $derived(form.chain.hop1.kind === "direct_bypass");
+  let gephSummary = $derived(
+    formatGephExitSummary(form.gephCountry, form.gephCity),
+  );
 
   function setHop(which: "hop1" | "hop2", kind: string) {
     const nextKind = kind as HopKind;
@@ -261,6 +267,20 @@
             尚未导入外部节点，前往「设置 → 节点与协议」添加 →
           </button>
         {/if}
+      {:else if form.chain.hop1.kind === "geph"}
+        <button
+          type="button"
+          onclick={onOpenGephExits}
+          class="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-xs transition hover:border-blue-400 hover:bg-zinc-100/70 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-blue-500 dark:hover:bg-zinc-900"
+        >
+          <span class="flex min-w-0 items-center gap-2">
+            <span class="text-base leading-none">{gephSummary.flag}</span>
+            <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
+              {gephSummary.label}
+            </span>
+          </span>
+          <ChevronRight class="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+        </button>
       {/if}
     </div>
 
@@ -303,6 +323,20 @@
               尚未导入外部节点，前往「设置 → 节点与协议」添加 →
             </button>
           {/if}
+        {:else if form.chain.hop2.kind === "geph"}
+          <button
+            type="button"
+            onclick={onOpenGephExits}
+            class="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-xs transition hover:border-blue-400 hover:bg-zinc-100/70 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-blue-500 dark:hover:bg-zinc-900"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <span class="text-base leading-none">{gephSummary.flag}</span>
+              <span class="truncate font-medium text-zinc-800 dark:text-zinc-200">
+                {gephSummary.label}
+              </span>
+            </span>
+            <ChevronRight class="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+          </button>
         {/if}
       </div>
     {/if}

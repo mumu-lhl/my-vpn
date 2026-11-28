@@ -1,17 +1,16 @@
 <script lang="ts">
-  import { RefreshCw, Save } from "@lucide/svelte";
+  import { ChevronRight, RefreshCw, Save } from "@lucide/svelte";
   import type { AppFormState } from "../lib/config_state";
-  import type { ExternalNode, GephExitLocation } from "../lib/mygo";
-  import { countryCodeToFlag } from "../lib/probe";
+  import { formatGephExitSummary } from "../lib/geph_exits";
+  import type { ExternalNode } from "../lib/mygo";
 
   interface Props {
     form: AppFormState;
-    gephExits: GephExitLocation[];
     subName: string;
     subURL: string;
     sortedExternalNodes: ExternalNode[];
     testingNodes: boolean;
-    onLoadGephExits: () => void;
+    onOpenGephExits: () => void;
     onAutoSave: () => void;
     onSave: () => void;
     onImportSub: () => void;
@@ -20,26 +19,20 @@
 
   let {
     form,
-    gephExits,
     subName = $bindable(""),
     subURL = $bindable(""),
     sortedExternalNodes,
     testingNodes,
-    onLoadGephExits,
+    onOpenGephExits,
     onAutoSave,
     onSave,
     onImportSub,
     onTestAllNodes,
   }: Props = $props();
 
-  const QUICK_GEPH_REGIONS = [
-    { code: "auto", label: "自动" },
-    { code: "JP", label: "日本" },
-    { code: "SG", label: "新加坡" },
-    { code: "US", label: "美国" },
-    { code: "DE", label: "德国" },
-    { code: "NL", label: "荷兰" },
-  ];
+  let gephSummary = $derived(
+    formatGephExitSummary(form.gephCountry, form.gephCity),
+  );
 </script>
 
 <section
@@ -49,16 +42,16 @@
     <div>
       <h2 class="text-base font-semibold">迷雾通 (Geph5)</h2>
       <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-        填写账号 Secret 后在主页连接迷雾通，连接后可拉取实时出口列表
+        填写账号 Secret 后，无需连接即可在主页选择并拉取实时出口列表
       </p>
     </div>
     <button
       type="button"
       class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-      onclick={onLoadGephExits}
+      onclick={onOpenGephExits}
     >
-      <RefreshCw class="h-3.5 w-3.5" />
-      <span>刷新实时出口</span>
+      <span>{gephSummary.flag} {gephSummary.label}</span>
+      <ChevronRight class="h-3.5 w-3.5 text-zinc-400" />
     </button>
   </div>
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -73,55 +66,19 @@
         placeholder="粘贴已有账号 Secret"
       />
     </label>
-    <label class="flex flex-col gap-1.5 text-sm">
+    <div class="flex flex-col gap-1.5 text-sm">
       <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-        出口国家 / 地区
+        当前出口节点
       </span>
-      <input
-        class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-        type="text"
-        bind:value={form.gephCountry}
-        placeholder="auto / JP / US / SG"
-      />
-    </label>
-  </div>
-
-  <div class="flex flex-wrap gap-1.5 pt-1">
-    {#if gephExits.length > 0}
-      {#each gephExits as ex}
-        <button
-          type="button"
-          class="rounded-md border px-2.5 py-1 text-xs transition {form.gephCountry.toUpperCase() ===
-          ex.country.toUpperCase()
-            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-            : 'border-zinc-200 bg-zinc-50 hover:border-blue-400 dark:border-zinc-700 dark:bg-zinc-800'}"
-          onclick={() => {
-            form.gephCountry = ex.country;
-            onAutoSave();
-          }}
-        >
-          {countryCodeToFlag(ex.country)}
-          {ex.country} · {ex.city}
-        </button>
-      {/each}
-    {:else}
-      {#each QUICK_GEPH_REGIONS as r}
-        <button
-          type="button"
-          class="rounded-md border px-2.5 py-1 text-xs transition {form.gephCountry.toLowerCase() ===
-          r.code.toLowerCase()
-            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-            : 'border-zinc-200 bg-zinc-50 hover:border-blue-400 dark:border-zinc-700 dark:bg-zinc-800'}"
-          onclick={() => {
-            form.gephCountry = r.code;
-            onAutoSave();
-          }}
-        >
-          {r.code === "auto" ? "🌐" : countryCodeToFlag(r.code)}
-          {r.label}
-        </button>
-      {/each}
-    {/if}
+      <button
+        type="button"
+        onclick={onOpenGephExits}
+        class="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-sm hover:border-blue-400 dark:border-zinc-700 dark:bg-zinc-950"
+      >
+        <span class="truncate">{gephSummary.flag} {gephSummary.label}</span>
+        <ChevronRight class="h-4 w-4 shrink-0 text-zinc-400" />
+      </button>
+    </div>
   </div>
 </section>
 

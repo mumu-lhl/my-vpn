@@ -11,7 +11,7 @@
     Sun,
   } from "@lucide/svelte";
   import type { AppFormState } from "../lib/config_state";
-  import type { ExternalNode, GephExitLocation } from "../lib/mygo";
+  import type { ExternalNode } from "../lib/mygo";
   import type { PlatformUIProfile } from "../lib/platform";
   import type { TestURLPreset } from "../lib/probe";
   import type { ThemeMode } from "../lib/theme";
@@ -30,7 +30,6 @@
     builtinProbePresets: TestURLPreset[];
     customProbeValid: boolean;
     themeMode: ThemeMode;
-    gephExits: GephExitLocation[];
     subName: string;
     subURL: string;
     sortedExternalNodes: ExternalNode[];
@@ -40,7 +39,7 @@
     onDebouncedAutoSave: () => void;
     onSave: () => void;
     onSetTheme: (mode: ThemeMode) => void;
-    onLoadGephExits: () => void;
+    onOpenGephExits: () => void;
     onImportSub: () => void;
     onTestAllNodes: () => void;
     onOpenAndroidVpnSettings: () => void;
@@ -54,7 +53,6 @@
     builtinProbePresets,
     customProbeValid,
     themeMode,
-    gephExits,
     subName = $bindable(""),
     subURL = $bindable(""),
     sortedExternalNodes,
@@ -64,7 +62,7 @@
     onDebouncedAutoSave,
     onSave,
     onSetTheme,
-    onLoadGephExits,
+    onOpenGephExits,
     onImportSub,
     onTestAllNodes,
     onOpenAndroidVpnSettings,
@@ -107,12 +105,11 @@
     {#if subpage === "protocols"}
       <ProtocolsTab
         {form}
-        {gephExits}
         bind:subName
         bind:subURL
         {sortedExternalNodes}
         {testingNodes}
-        {onLoadGephExits}
+        {onOpenGephExits}
         {onAutoSave}
         {onSave}
         {onImportSub}
