@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/core"
-	"github.com/mumu-lhl/my-vpn/internal/ipc"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/core"
+	"github.com/mumu-lhl/looma/internal/ipc"
 )
 
 func TestFullPipelineCoreHelperIPCAndAntiLeakConfig(t *testing.T) {

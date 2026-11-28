@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/bootstrap"
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/bootstrap"
+	"github.com/mumu-lhl/looma/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -394,7 +394,7 @@ func (f *Fetcher) Fetch(ctx context.Context, sub config.Subscription) ([]config.
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "sing-box/1.15 my-vpn/0.1")
+	req.Header.Set("User-Agent", "sing-box/1.15 looma/0.1")
 	resp, err := cli.Do(req)
 	if err != nil {
 		return nil, err

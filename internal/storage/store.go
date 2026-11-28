@@ -14,16 +14,17 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/config"
 )
 
 const encPrefix = "enc:v1:"
 
 type Store struct {
-	mu       sync.RWMutex
-	path     string
-	key      [32]byte
-	snapshot *config.AppConfig
+	mu        sync.RWMutex
+	path      string
+	key       [32]byte
+	legacyKey [32]byte
+	snapshot  *config.AppConfig
 }
 
 func NewStore(dir string, secretSeed string) (*Store, error) {
@@ -31,8 +32,9 @@ func NewStore(dir string, secretSeed string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{
-		path: filepath.Join(dir, "config.json"),
-		key:  sha256.Sum256([]byte("my-vpn-store:" + secretSeed)),
+		path:      filepath.Join(dir, "config.json"),
+		key:       sha256.Sum256([]byte("looma-store:" + secretSeed)),
+		legacyKey: sha256.Sum256([]byte("my-vpn-store:" + secretSeed)),
 	}
 	cfg, err := s.loadFromDisk()
 	if err != nil {
@@ -133,15 +135,8 @@ func (s *Store) encrypt(plain string) (string, error) {
 	return encPrefix + base64.StdEncoding.EncodeToString(ct), nil
 }
 
-func (s *Store) decryptIfNeeded(val string) (string, error) {
-	if len(val) < len(encPrefix) || val[:len(encPrefix)] != encPrefix {
-		return val, nil
-	}
-	data, err := base64.StdEncoding.DecodeString(val[len(encPrefix):])
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(s.key[:])
+func decryptWithKey(key [32]byte, data []byte) (string, error) {
+	block, err := aes.NewCipher(key[:])
 	if err != nil {
 		return "", err
 	}
@@ -158,6 +153,20 @@ func (s *Store) decryptIfNeeded(val string) (string, error) {
 		return "", err
 	}
 	return string(pt), nil
+}
+
+func (s *Store) decryptIfNeeded(val string) (string, error) {
+	if len(val) < len(encPrefix) || val[:len(encPrefix)] != encPrefix {
+		return val, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(val[len(encPrefix):])
+	if err != nil {
+		return "", err
+	}
+	if pt, err := decryptWithKey(s.key, data); err == nil {
+		return pt, nil
+	}
+	return decryptWithKey(s.legacyKey, data)
 }
 
 func cloneConfig(cfg *config.AppConfig) *config.AppConfig {

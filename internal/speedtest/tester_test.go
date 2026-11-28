@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/config"
 )
 
 func TestBatchURLTestAndSortingAC03(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/config"
 )
 
 func TestStoreEncryptsSecretsAtRest(t *testing.T) {
