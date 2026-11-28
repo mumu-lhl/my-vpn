@@ -2,6 +2,7 @@ export default {
   name: "Looma",
   identifier: "io.github.mumulhl.looma",
   version: "0.1.0",
+  icon: "resources/icon.png",
   main: "./cmd/app",
   devUrl: "http://localhost:5173",
   devCommand: "bun run --cwd frontend dev",
