@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/bootstrap"
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/bootstrap"
+	"github.com/mumu-lhl/looma/internal/config"
 )
 
 type mockConn struct {

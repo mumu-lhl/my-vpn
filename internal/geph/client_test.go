@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/config"
 )
 
 func TestGephYAMLAndExitFetchAC01(t *testing.T) {

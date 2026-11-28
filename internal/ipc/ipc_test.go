@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/core"
-	"github.com/mumu-lhl/my-vpn/internal/platform"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/core"
+	"github.com/mumu-lhl/looma/internal/platform"
 )
 
 func TestUnixSocketIPCStartStopStatsAC10(t *testing.T) {
 	dir := t.TempDir()
-	sock := fmt.Sprintf("/tmp/myvpn-ipc-%d.sock", time.Now().UnixNano())
+	sock := fmt.Sprintf("/tmp/looma-ipc-%d.sock", time.Now().UnixNano())
 	defer os.Remove(sock)
 	eng := core.NewEngine(dir)
 	srv := NewServer(sock, eng)
@@ -39,7 +39,7 @@ func TestUnixSocketIPCStartStopStatsAC10(t *testing.T) {
 	if err != nil || !st.Running {
 		t.Fatalf("expected running stats, err=%v st=%+v", err, st)
 	}
-	ksOn, err := cli.SetKillSwitch(context.Background(), KillSwitchRequest{Enabled: true, TUNName: "myvpn0", AllowLAN: true})
+	ksOn, err := cli.SetKillSwitch(context.Background(), KillSwitchRequest{Enabled: true, TUNName: "looma0", AllowLAN: true})
 	if err != nil || !ksOn.Active {
 		t.Fatalf("expected killswitch active via IPC, err=%v st=%+v", err, ksOn)
 	}

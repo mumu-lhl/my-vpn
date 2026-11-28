@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/bootstrap"
+	"github.com/mumu-lhl/looma/internal/bootstrap"
 )
 
 // StrategyProbeResult captures the outcome of testing a single strategy against a target host.

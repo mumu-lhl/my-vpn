@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/core"
-	"github.com/mumu-lhl/my-vpn/internal/platform"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/core"
+	"github.com/mumu-lhl/looma/internal/platform"
 )
 
 type StartRequest struct {
