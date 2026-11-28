@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
-	"github.com/mumu-lhl/my-vpn/internal/config"
+	"github.com/mumu-lhl/looma/internal/config"
 )
 
 const (

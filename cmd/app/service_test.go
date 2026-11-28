@@ -12,16 +12,16 @@ import (
 	"github.com/egoist/mygo"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/core"
-	"github.com/mumu-lhl/my-vpn/internal/ipc"
-	"github.com/mumu-lhl/my-vpn/internal/platform"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/core"
+	"github.com/mumu-lhl/looma/internal/ipc"
+	"github.com/mumu-lhl/looma/internal/platform"
 )
 
 func TestAppServiceCoreHelperIPCAndKillSwitchLifecycle(t *testing.T) {
 	dataDir := t.TempDir()
 	helperDir := t.TempDir()
-	sock := fmt.Sprintf("/tmp/myvpn-svc-%d.sock", time.Now().UnixNano())
+	sock := fmt.Sprintf("/tmp/looma-svc-%d.sock", time.Now().UnixNano())
 	defer os.Remove(sock)
 
 	var nftScripts []string
@@ -69,7 +69,7 @@ func TestAppServiceCoreHelperIPCAndKillSwitchLifecycle(t *testing.T) {
 	if st := svc.GetStats(); st.Running {
 		t.Fatalf("expected stopped stats after Disconnect, got %+v", st)
 	}
-	if len(nftScripts) != 2 || !strings.Contains(nftScripts[1], "delete table inet myvpn_killswitch") {
+	if len(nftScripts) != 2 || !strings.Contains(nftScripts[1], "delete table inet looma_killswitch") {
 		t.Fatalf("expected nftables killswitch deleted on Disconnect, got %v", nftScripts)
 	}
 }
@@ -77,7 +77,7 @@ func TestAppServiceCoreHelperIPCAndKillSwitchLifecycle(t *testing.T) {
 func TestAppServiceRollbackWhenKillSwitchEnableFails(t *testing.T) {
 	dataDir := t.TempDir()
 	helperDir := t.TempDir()
-	sock := fmt.Sprintf("/tmp/myvpn-svc-fail-%d.sock", time.Now().UnixNano())
+	sock := fmt.Sprintf("/tmp/looma-svc-fail-%d.sock", time.Now().UnixNano())
 	defer os.Remove(sock)
 
 	helperEng := core.NewEngine(helperDir)

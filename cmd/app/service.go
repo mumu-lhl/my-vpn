@@ -12,16 +12,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mumu-lhl/my-vpn/internal/config"
-	"github.com/mumu-lhl/my-vpn/internal/core"
-	"github.com/mumu-lhl/my-vpn/internal/dpi"
-	"github.com/mumu-lhl/my-vpn/internal/geph"
-	"github.com/mumu-lhl/my-vpn/internal/ipc"
-	"github.com/mumu-lhl/my-vpn/internal/platform"
-	"github.com/mumu-lhl/my-vpn/internal/probe"
-	"github.com/mumu-lhl/my-vpn/internal/speedtest"
-	"github.com/mumu-lhl/my-vpn/internal/storage"
-	"github.com/mumu-lhl/my-vpn/internal/subscription"
+	"github.com/mumu-lhl/looma/internal/config"
+	"github.com/mumu-lhl/looma/internal/core"
+	"github.com/mumu-lhl/looma/internal/dpi"
+	"github.com/mumu-lhl/looma/internal/geph"
+	"github.com/mumu-lhl/looma/internal/ipc"
+	"github.com/mumu-lhl/looma/internal/platform"
+	"github.com/mumu-lhl/looma/internal/probe"
+	"github.com/mumu-lhl/looma/internal/speedtest"
+	"github.com/mumu-lhl/looma/internal/storage"
+	"github.com/mumu-lhl/looma/internal/subscription"
 )
 
 type AppService struct {
@@ -253,7 +253,7 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 						Enabled:        true,
 						TUNName:        cfg.Inbound.TUNName,
 						AllowLAN:       cfg.Inbound.AllowLAN,
-						BypassCgroupV2: os.Getenv("MYVPN_GEPH_CGROUPV2"),
+						BypassCgroupV2: firstEnv("LOOMA_GEPH_CGROUPV2", "MYVPN_GEPH_CGROUPV2"),
 					}
 					if _, err := cli.SetKillSwitch(ctx, ksReq); err != nil {
 						_ = cli.Stop(ctx)
@@ -342,7 +342,7 @@ func (s *AppService) SetKillSwitch(ctx context.Context, enabled bool) (bool, err
 		Enabled:        enabled,
 		TUNName:        cfg.Inbound.TUNName,
 		AllowLAN:       cfg.Inbound.AllowLAN,
-		BypassCgroupV2: os.Getenv("MYVPN_GEPH_CGROUPV2"),
+		BypassCgroupV2: firstEnv("LOOMA_GEPH_CGROUPV2", "MYVPN_GEPH_CGROUPV2"),
 	})
 	if err != nil {
 		s.mu.Unlock()
@@ -487,4 +487,13 @@ func (s *AppService) ClearDomainBypassCache(domain string) error {
 		return s.engine.DomainCache().Clear()
 	}
 	return s.engine.DomainCache().Delete(domain)
+}
+
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
 }

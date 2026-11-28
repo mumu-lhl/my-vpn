@@ -5,7 +5,7 @@ package main
 import (
 	"github.com/egoist/mygo"
 
-	"github.com/mumu-lhl/my-vpn/frontend"
+	"github.com/mumu-lhl/looma/frontend"
 )
 
 func init() {

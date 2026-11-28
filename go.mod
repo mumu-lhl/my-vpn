@@ -1,4 +1,4 @@
-module github.com/mumu-lhl/my-vpn
+module github.com/mumu-lhl/looma
 
 go 1.27.4
 
