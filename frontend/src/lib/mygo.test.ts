@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { AndroidNetPlugin, AppService, hasMyGoBridge } from "./mygo";
+import { AppService, hasMyGoBridge } from "./mygo";
 
 describe("mygo bridge", () => {
   const origWindow = (globalThis as Record<string, unknown>).window;
@@ -20,7 +20,7 @@ describe("mygo bridge", () => {
     );
   });
 
-  it("forwards AppService and AndroidNetPlugin calls to window.mygo.call", async () => {
+  it("forwards AppService calls to window.mygo.call", async () => {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     (globalThis as Record<string, unknown>).window = {
       mygo: {
@@ -32,8 +32,17 @@ describe("mygo bridge", () => {
               hops: [],
             };
           }
-          if (method === "AndroidNetPlugin.openVpnSettings") {
-            return { opened: true };
+          if (method === "AppService.OpenVpnSettings") {
+            return true;
+          }
+          if (method === "AppService.ListInstalledApps") {
+            return [
+              {
+                package_name: "com.example.app",
+                label: "Example",
+                is_system: false,
+              },
+            ];
           }
           return { running: true, up_bytes: 10, down_bytes: 20 };
         },
@@ -43,11 +52,14 @@ describe("mygo bridge", () => {
     expect(hasMyGoBridge()).toBe(true);
     const probeRes = await AppService.ProbeChain();
     expect(probeRes.test_url).toContain("generate_204");
-    const openRes = await AndroidNetPlugin.openVpnSettings();
-    expect(openRes.opened).toBe(true);
+    const apps = await AppService.ListInstalledApps();
+    expect(apps).toHaveLength(1);
+    const opened = await AppService.OpenVpnSettings();
+    expect(opened).toBe(true);
     expect(calls.map((c) => c.method)).toEqual([
       "AppService.ProbeChain",
-      "AndroidNetPlugin.openVpnSettings",
+      "AppService.ListInstalledApps",
+      "AppService.OpenVpnSettings",
     ]);
   });
 });

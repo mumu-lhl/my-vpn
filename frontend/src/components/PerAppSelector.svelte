@@ -8,7 +8,7 @@
     Search,
     X,
   } from "@lucide/svelte";
-  import { AndroidNetPlugin, AppService } from "../lib/mygo";
+  import { AppService } from "../lib/mygo";
   import {
     type DetectedCNApp,
     type InstalledApp,
@@ -101,9 +101,9 @@
     renderLimit = PAGE_SIZE;
     try {
       if (bridgeReady) {
-        const res = await AndroidNetPlugin.listInstalledApps();
-        if (Array.isArray(res?.apps) && res.apps.length > 0) {
-          installedApps = res.apps;
+        const apps = await AppService.ListInstalledApps();
+        if (Array.isArray(apps) && apps.length > 0) {
+          installedApps = apps;
           loadedFromDevice = true;
           hasLoadedOnce = true;
           return;

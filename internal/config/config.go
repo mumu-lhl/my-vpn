@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"net/url"
+	"runtime"
 	"strings"
 )
 
@@ -239,9 +240,13 @@ type AndroidConfig struct {
 }
 
 func DefaultConfig() *AppConfig {
+	defaultInboundMode := InboundProxy
+	if runtime.GOOS == "android" {
+		defaultInboundMode = InboundTUN
+	}
 	return &AppConfig{
 		Inbound: InboundConfig{
-			Mode:        InboundProxy,
+			Mode:        defaultInboundMode,
 			SocksPort:   10808,
 			HTTPPort:    10809,
 			AllowLAN:    false,

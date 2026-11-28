@@ -16,7 +16,6 @@
     type TestURLPreset,
   } from "./lib/probe";
   import {
-    AndroidNetPlugin,
     AppService,
     hasMyGoBridge,
     type GephExitLocation,
@@ -100,9 +99,29 @@
     }
   }
 
+  function buildRouteHash(tab: AppTab, sub: SettingsSubpage): string {
+    if (tab === "settings") {
+      return sub ? `#settings/${sub}` : "#settings";
+    }
+    return "#dashboard";
+  }
+
+  function navigateTo(tab: AppTab, sub: SettingsSubpage = null) {
+    const nextSub = tab === "settings" ? sub : null;
+    if (activeTab === tab && settingsSubpage === nextSub) return;
+    activeTab = tab;
+    settingsSubpage = nextSub;
+    if (typeof window !== "undefined" && typeof window.history?.pushState === "function") {
+      window.history.pushState(
+        { tab, subpage: nextSub },
+        "",
+        buildRouteHash(tab, nextSub),
+      );
+    }
+  }
+
   function openSettingsSubpage(sub: SettingsSubpage) {
-    activeTab = "settings";
-    settingsSubpage = sub;
+    navigateTo("settings", sub);
   }
 
   async function persistConfig(showNotice = false): Promise<boolean> {
@@ -309,7 +328,7 @@
       return;
     }
     try {
-      await AndroidNetPlugin.openVpnSettings();
+      await AppService.OpenVpnSettings();
     } catch (err) {
       statusError = `无法打开系统设置：${errMsg(err)}`;
     }
@@ -367,6 +386,27 @@
         });
     }
 
+    const onPopState = (event: PopStateEvent) => {
+      const st = event.state as { tab?: AppTab; subpage?: SettingsSubpage } | null;
+      if (st && (st.tab === "dashboard" || st.tab === "settings")) {
+        activeTab = st.tab;
+        settingsSubpage = st.tab === "settings" ? (st.subpage ?? null) : null;
+      } else {
+        activeTab = "dashboard";
+        settingsSubpage = null;
+      }
+    };
+    if (typeof window !== "undefined") {
+      if (typeof window.history?.replaceState === "function") {
+        window.history.replaceState(
+          { tab: activeTab, subpage: settingsSubpage },
+          "",
+          buildRouteHash(activeTab, settingsSubpage),
+        );
+      }
+      window.addEventListener("popstate", onPopState);
+    }
+
     const onVisibility = () => {
       if (document.hidden) {
         flushPendingSave();
@@ -380,6 +420,9 @@
       flushPendingSave();
       mq.removeEventListener("change", onThemeChange);
       document.removeEventListener("visibilitychange", onVisibility);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("popstate", onPopState);
+      }
     };
   });
 </script>
@@ -390,12 +433,7 @@
   <NavSidebar
     {activeTab}
     {themeMode}
-    onSelectTab={(tab) => {
-      activeTab = tab;
-      if (tab === "settings") {
-        settingsSubpage = null;
-      }
-    }}
+    onSelectTab={(tab) => navigateTo(tab, null)}
     onSelectTheme={selectTheme}
   />
 
@@ -446,7 +484,7 @@
         bind:subURL
         {sortedExternalNodes}
         {testingNodes}
-        onSelectSubpage={(sub) => (settingsSubpage = sub)}
+        onSelectSubpage={(sub) => navigateTo("settings", sub)}
         onAutoSave={() => void persistConfig(false)}
         onDebouncedAutoSave={scheduleDebouncedSave}
         onSave={() => void persistConfig(true)}

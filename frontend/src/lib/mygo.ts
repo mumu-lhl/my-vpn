@@ -1,7 +1,7 @@
 import type { ChainProbeResult, TestURLPreset } from "./probe";
 import type { ClassicCNApp, DetectedCNApp, InstalledApp } from "./cn_apps";
 
-// Typed client bridge matching MyGo bound AppService and AndroidNetPlugin methods.
+// Typed client bridge matching MyGo bound AppService methods.
 declare global {
   interface Window {
     mygo?: {
@@ -158,19 +158,7 @@ export const AppService = {
     callGo<void>("AppService.LockDomainBypassStrategy", domain, strategyId),
   ClearDomainBypassCache: (domain: string) =>
     callGo<void>("AppService.ClearDomainBypassCache", domain),
-};
-
-export const AndroidNetPlugin = {
-  prepareAndStart: (args: Record<string, unknown>) =>
-    callGo<{ started: boolean }>("AndroidNetPlugin.prepareAndStart", args),
-  stop: () => callGo<{ stopped: boolean }>("AndroidNetPlugin.stop", {}),
-  updateStats: (args: {
-    up_bps: number;
-    down_bps: number;
-    chain_desc: string;
-  }) => callGo<void>("AndroidNetPlugin.updateStats", args),
-  listInstalledApps: () =>
-    callGo<{ apps: InstalledApp[] }>("AndroidNetPlugin.listInstalledApps", {}),
-  openVpnSettings: () =>
-    callGo<{ opened: boolean }>("AndroidNetPlugin.openVpnSettings", {}),
+  ListInstalledApps: () =>
+    callGo<InstalledApp[]>("AppService.ListInstalledApps"),
+  OpenVpnSettings: () => callGo<boolean>("AppService.OpenVpnSettings"),
 };

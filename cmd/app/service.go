@@ -25,17 +25,20 @@ import (
 )
 
 type AppService struct {
-	mu            sync.Mutex
-	dataDir       string
-	store         *storage.Store
-	engine        *core.Engine
-	geph          *geph.Supervisor
-	prober        *probe.Prober
-	helperSock    string
-	helperCmd     *exec.Cmd
-	ipcClient     *ipc.Client
-	usingHelper   bool
-	onStateChange func()
+	mu              sync.Mutex
+	dataDir         string
+	store           *storage.Store
+	engine          *core.Engine
+	geph            *geph.Supervisor
+	prober          *probe.Prober
+	helperSock      string
+	helperCmd       *exec.Cmd
+	ipcClient       *ipc.Client
+	usingHelper     bool
+	androidBridge   androidNetBridge
+	usingAndroidVPN bool
+	tunStoppedOff   func()
+	onStateChange   func()
 }
 
 func NewAppService(dataDir string) (*AppService, error) {
@@ -44,14 +47,23 @@ func NewAppService(dataDir string) (*AppService, error) {
 		return nil, err
 	}
 	defaultSock := filepath.Join(os.TempDir(), fmt.Sprintf("looma-%d", os.Getuid()), "looma-helper.sock")
-	return &AppService{
-		dataDir:    dataDir,
-		store:      st,
-		engine:     core.NewEngine(filepath.Join(dataDir, "runtime")),
-		geph:       geph.NewSupervisor(geph.ResolveBinaryPath(""), filepath.Join(dataDir, "geph")),
-		prober:     probe.NewProber(),
-		helperSock: defaultSock,
-	}, nil
+	svc := &AppService{
+		dataDir:       dataDir,
+		store:         st,
+		engine:        core.NewEngine(filepath.Join(dataDir, "runtime")),
+		geph:          geph.NewSupervisor(geph.ResolveBinaryPath(""), filepath.Join(dataDir, "geph")),
+		prober:        probe.NewProber(),
+		helperSock:    defaultSock,
+		androidBridge: newMyGoAndroidBridge(),
+	}
+	if svc.androidBridge.Available() {
+		svc.tunStoppedOff = svc.androidBridge.OnTunStopped(func() {
+			go func() {
+				_ = svc.Disconnect()
+			}()
+		})
+	}
+	return svc, nil
 }
 
 // setOnStateChange registers a callback invoked after connection or config
@@ -128,6 +140,10 @@ func (s *AppService) SwitchInboundMode(ctx context.Context, mode config.InboundM
 // Shutdown disconnects any active tunnel, clears system proxy and Kill Switch,
 // and gracefully terminates a locally spawned looma-helper process.
 func (s *AppService) Shutdown() error {
+	if s.tunStoppedOff != nil {
+		s.tunStoppedOff()
+		s.tunStoppedOff = nil
+	}
 	firstErr := s.Disconnect()
 
 	s.mu.Lock()
@@ -225,8 +241,9 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 		}
 	}
 
-	mandatoryHelper := runtime.GOOS == "linux" && (cfg.Inbound.Mode == config.InboundTUN || cfg.Inbound.KillSwitch)
-	wantsRawFakeHelper := runtime.GOOS == "linux" &&
+	isAndroid := s.androidBridge != nil && s.androidBridge.Available()
+	mandatoryHelper := !isAndroid && runtime.GOOS == "linux" && (cfg.Inbound.Mode == config.InboundTUN || cfg.Inbound.KillSwitch)
+	wantsRawFakeHelper := !isAndroid && runtime.GOOS == "linux" &&
 		cfg.Chain.Hop1.Kind == config.HopDirectBypass &&
 		(cfg.Routing.DirectBypass.EnableRawFake || cfg.Routing.DirectBypass.PresetID == dpi.PresetRawFakeMultidisorder)
 
@@ -273,8 +290,32 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 		}
 	}
 
-	res, err := s.engine.Start(ctx, cfg, 0)
+	tunFD := 0
+	if s.androidBridge != nil && s.androidBridge.Available() && cfg.Inbound.Mode == config.InboundTUN {
+		fd, err := s.androidBridge.PrepareAndStart(ctx, androidPrepareRequest{
+			PerAppMode:     string(cfg.Android.PerAppMode),
+			PerAppPackages: strings.Join(cfg.Android.PerAppPackages, ","),
+			AllowLAN:       cfg.Inbound.AllowLAN,
+			KillSwitch:     cfg.Inbound.KillSwitch,
+			ChainDesc:      formatChainDesc(cfg),
+		})
+		if err != nil {
+			_ = s.geph.Stop()
+			s.mu.Unlock()
+			return nil, fmt.Errorf("start android vpn: %w", err)
+		}
+		tunFD = fd
+		s.usingAndroidVPN = true
+	}
+
+	res, err := s.engine.Start(ctx, cfg, tunFD)
 	if err != nil {
+		if s.usingAndroidVPN && s.androidBridge != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_ = s.androidBridge.Stop(stopCtx)
+			cancel()
+			s.usingAndroidVPN = false
+		}
 		_ = s.geph.Stop()
 		s.mu.Unlock()
 		return nil, err
@@ -304,6 +345,14 @@ func (s *AppService) Disconnect() error {
 		}
 		cancel()
 		s.usingHelper = false
+	}
+	if s.usingAndroidVPN && s.androidBridge != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := s.androidBridge.Stop(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		cancel()
+		s.usingAndroidVPN = false
 	}
 	_ = s.geph.Stop()
 	if err := s.engine.Stop(); err != nil && firstErr == nil {
@@ -443,6 +492,20 @@ func (s *AppService) GetClassicCNApps() []platform.ClassicCNApp {
 
 func (s *AppService) DetectCNApps(apps []platform.InstalledApp) []platform.DetectedCNApp {
 	return platform.DetectChinaApps(apps)
+}
+
+func (s *AppService) ListInstalledApps(ctx context.Context) ([]platform.InstalledApp, error) {
+	if s.androidBridge == nil {
+		return nil, fmt.Errorf("android_netlink bridge not initialized")
+	}
+	return s.androidBridge.ListInstalledApps(ctx)
+}
+
+func (s *AppService) OpenVpnSettings(ctx context.Context) (bool, error) {
+	if s.androidBridge == nil {
+		return false, fmt.Errorf("android_netlink bridge not initialized")
+	}
+	return s.androidBridge.OpenVpnSettings(ctx)
 }
 
 func (s *AppService) GetBypassPresets() []dpi.Strategy {

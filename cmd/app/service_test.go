@@ -145,3 +145,96 @@ func TestGetRuntimePlatformAndFriendlyGephExitError(t *testing.T) {
 		t.Fatalf("expected friendly error without raw 19910 port, got: %v", err)
 	}
 }
+
+type fakeAndroidBridge struct {
+	available    bool
+	prepareFD    int
+	prepareErr   error
+	prepareCalls []androidPrepareRequest
+	stopCalls    int
+	apps         []platform.InstalledApp
+	openResult   bool
+}
+
+func (f *fakeAndroidBridge) Available() bool { return f.available }
+func (f *fakeAndroidBridge) PrepareAndStart(_ context.Context, req androidPrepareRequest) (int, error) {
+	f.prepareCalls = append(f.prepareCalls, req)
+	if f.prepareErr != nil {
+		return 0, f.prepareErr
+	}
+	return f.prepareFD, nil
+}
+func (f *fakeAndroidBridge) Stop(_ context.Context) error {
+	f.stopCalls++
+	return nil
+}
+func (f *fakeAndroidBridge) ListInstalledApps(_ context.Context) ([]platform.InstalledApp, error) {
+	return f.apps, nil
+}
+func (f *fakeAndroidBridge) OpenVpnSettings(_ context.Context) (bool, error) {
+	return f.openResult, nil
+}
+func (f *fakeAndroidBridge) OnTunStopped(_ func()) func() { return func() {} }
+
+func TestAppServiceAndroidVPNLifecycleAndBridgeMethods(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+	bridge := &fakeAndroidBridge{
+		available:  true,
+		prepareFD:  42,
+		openResult: true,
+		apps: []platform.InstalledApp{
+			{PackageName: "com.tencent.mm", Label: "WeChat", IsSystem: false},
+		},
+	}
+	svc.androidBridge = bridge
+
+	apps, err := svc.ListInstalledApps(context.Background())
+	if err != nil || len(apps) != 1 || apps[0].PackageName != "com.tencent.mm" {
+		t.Fatalf("unexpected ListInstalledApps result: apps=%+v err=%v", apps, err)
+	}
+	opened, err := svc.OpenVpnSettings(context.Background())
+	if err != nil || !opened {
+		t.Fatalf("unexpected OpenVpnSettings result: opened=%v err=%v", opened, err)
+	}
+
+	cfg := svc.GetConfig()
+	cfg.Inbound.Mode = config.InboundTUN
+	cfg.Inbound.SocksPort = freePort(t)
+	cfg.Inbound.HTTPPort = freePort(t)
+	cfg.Android.PerAppMode = config.PerAppBlacklist
+	cfg.Android.PerAppPackages = []string{"com.tencent.mm", "com.eg.android.AlipayGphone"}
+	if err := svc.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	res, err := svc.Connect(context.Background())
+	if err != nil {
+		t.Fatalf("Connect with Android VPN bridge failed: %v", err)
+	}
+	if len(bridge.prepareCalls) != 1 {
+		t.Fatalf("expected 1 PrepareAndStart call, got %d", len(bridge.prepareCalls))
+	}
+	req := bridge.prepareCalls[0]
+	if req.PerAppMode != "blacklist" || req.PerAppPackages != "com.tencent.mm,com.eg.android.AlipayGphone" {
+		t.Fatalf("unexpected prepare request: %+v", req)
+	}
+	if !strings.Contains(string(res.JSON), `"file_descriptor": 42`) {
+		t.Fatalf("expected compiled sing-box config to contain tun file_descriptor 42")
+	}
+
+	if err := svc.Disconnect(); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+	if bridge.stopCalls != 1 {
+		t.Fatalf("expected 1 Stop call on Disconnect, got %d", bridge.stopCalls)
+	}
+
+	// Verify permission denial fails Connect cleanly.
+	bridge.prepareErr = errors.New("PermissionDenied")
+	if _, err := svc.Connect(context.Background()); err == nil {
+		t.Fatalf("expected Connect error when VPN permission is denied")
+	}
+}
