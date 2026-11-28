@@ -418,6 +418,7 @@ func (e *Engine) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	tr := &http.Transport{
 		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) { return rc, nil },
 	}
+	defer tr.CloseIdleConnections()
 	outReq := r.Clone(r.Context())
 	outReq.RequestURI = ""
 	resp, err := tr.RoundTrip(outReq)
@@ -436,17 +437,28 @@ func (e *Engine) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	e.downBytes.Add(n)
 }
 
+var relayBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
+
 func (e *Engine) relay(a, b net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		n, _ := io.Copy(b, a)
+		bufPtr := relayBufPool.Get().(*[]byte)
+		n, _ := io.CopyBuffer(b, a, *bufPtr)
+		relayBufPool.Put(bufPtr)
 		e.upBytes.Add(n)
 	}()
 	go func() {
 		defer wg.Done()
-		n, _ := io.Copy(a, b)
+		bufPtr := relayBufPool.Get().(*[]byte)
+		n, _ := io.CopyBuffer(a, b, *bufPtr)
+		relayBufPool.Put(bufPtr)
 		e.downBytes.Add(n)
 	}()
 	wg.Wait()

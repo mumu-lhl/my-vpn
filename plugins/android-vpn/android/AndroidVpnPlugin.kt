@@ -73,15 +73,20 @@ class AndroidNetPlugin : MyGoPlugin {
                         for (app in apps) {
                             if (app.packageName == selfPkg) continue
                             val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                            val installer = try {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                    pm.getInstallSourceInfo(app.packageName).installingPackageName ?: ""
-                                } else {
-                                    @Suppress("DEPRECATION")
-                                    pm.getInstallerPackageName(app.packageName) ?: ""
-                                }
-                            } catch (_: Exception) {
+                            // Skip expensive cross-Binder getInstallSourceInfo IPC for system apps.
+                            val installer = if (isSystem) {
                                 ""
+                            } else {
+                                try {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                        pm.getInstallSourceInfo(app.packageName).installingPackageName ?: ""
+                                    } else {
+                                        @Suppress("DEPRECATION")
+                                        pm.getInstallerPackageName(app.packageName) ?: ""
+                                    }
+                                } catch (_: Exception) {
+                                    ""
+                                }
                             }
                             arr.put(
                                 JSONObject()

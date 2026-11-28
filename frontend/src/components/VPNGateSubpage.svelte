@@ -49,9 +49,11 @@
     onSelectNode,
   }: Props = $props();
 
+  const PAGE_SIZE = 40;
   let selectedCountry = $state("ALL");
   let sortField = $state<VPNGateSortField>("score");
   let sortDir = $state<VPNGateSortDir>("desc");
+  let renderLimit = $state(PAGE_SIZE);
 
   const SORT_OPTIONS: Array<{ field: VPNGateSortField; label: string }> = [
     { field: "score", label: "分数" },
@@ -72,8 +74,11 @@
   let visibleNodes = $derived(
     sortVPNGateNodes(filteredNodes, sortField, sortDir),
   );
+  let renderedNodes = $derived(visibleNodes.slice(0, renderLimit));
+  let hasMoreNodes = $derived(visibleNodes.length > renderLimit);
 
   function toggleSort(field: VPNGateSortField) {
+    renderLimit = PAGE_SIZE;
     if (sortField === field) {
       sortDir = sortDir === "desc" ? "asc" : "desc";
     } else {
@@ -148,6 +153,7 @@
         class="min-w-[11rem]"
         bind:value={selectedCountry}
         options={countryOptions}
+        onchange={() => (renderLimit = PAGE_SIZE)}
       />
     </label>
 
@@ -188,7 +194,7 @@
       </div>
     {:else}
       <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-        {#each visibleNodes as node (node.id)}
+        {#each renderedNodes as node (node.id)}
           {@const country = formatVPNGateCountry(
             node.country_short,
             node.country_long,
@@ -243,6 +249,19 @@
           </button>
         {/each}
       </div>
+      {#if hasMoreNodes}
+        <div
+          class="border-t border-zinc-100 p-3 text-center dark:border-zinc-800"
+        >
+          <button
+            type="button"
+            onclick={() => (renderLimit += PAGE_SIZE)}
+            class="rounded-lg border border-zinc-200 px-4 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            加载更多（已显示 {renderedNodes.length} / {visibleNodes.length}）
+          </button>
+        </div>
+      {/if}
     {/if}
   </section>
 </div>

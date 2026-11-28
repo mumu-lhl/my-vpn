@@ -48,6 +48,7 @@ type Resolver struct {
 	mu         sync.RWMutex
 	cache      map[string]cacheEntry
 	httpsCache map[string]httpsCacheEntry
+	epClients  map[string]*http.Client
 	dialDirect func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
@@ -74,6 +75,7 @@ func NewResolver(opts Options) *Resolver {
 		tlsConfig:  opts.TLSConfig,
 		cache:      make(map[string]cacheEntry),
 		httpsCache: make(map[string]httpsCacheEntry),
+		epClients:  make(map[string]*http.Client),
 		dialDirect: d.DialContext,
 	}
 }
@@ -114,27 +116,14 @@ func (r *Resolver) Resolve(ctx context.Context, host string) ([]string, error) {
 	return nil, fmt.Errorf("bootstrap DoH resolve %s: %w", host, lastErr)
 }
 
-func (r *Resolver) queryEndpoint(ctx context.Context, ep DoHEndpoint, host string) ([]string, time.Duration, error) {
-	u, err := url.Parse(ep.URL)
-	if err != nil {
-		return nil, 0, err
+func (r *Resolver) endpointClient(ep DoHEndpoint, u *url.URL, port string) *http.Client {
+	key := ep.URL + "|" + port + "|" + strings.Join(ep.StaticIPs, ",")
+	r.mu.RLock()
+	cli := r.epClients[key]
+	r.mu.RUnlock()
+	if cli != nil {
+		return cli
 	}
-	port := u.Port()
-	if port == "" {
-		if u.Scheme == "http" {
-			port = "80"
-		} else {
-			port = "443"
-		}
-	}
-	if len(ep.StaticIPs) == 0 {
-		return nil, 0, errors.New("DoH endpoint requires at least one static IP")
-	}
-
-	q := u.Query()
-	q.Set("name", host)
-	q.Set("type", "A")
-	u.RawQuery = q.Encode()
 
 	var tlsCfg *tls.Config
 	if r.tlsConfig != nil {
@@ -158,7 +147,10 @@ func (r *Resolver) queryEndpoint(ctx context.Context, ep DoHEndpoint, host strin
 	}
 
 	tr := &http.Transport{
-		TLSClientConfig: tlsCfg,
+		TLSClientConfig:     tlsCfg,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     60 * time.Second,
+		ForceAttemptHTTP2:   true,
 		DialContext: func(dctx context.Context, network, _ string) (net.Conn, error) {
 			var dialErr error
 			for _, ip := range ep.StaticIPs {
@@ -171,9 +163,45 @@ func (r *Resolver) queryEndpoint(ctx context.Context, ep DoHEndpoint, host strin
 			return nil, dialErr
 		},
 	}
-	defer tr.CloseIdleConnections()
+	newCli := &http.Client{Transport: tr, Timeout: r.timeout}
 
-	cli := &http.Client{Transport: tr, Timeout: r.timeout}
+	r.mu.Lock()
+	if existing := r.epClients[key]; existing != nil {
+		r.mu.Unlock()
+		tr.CloseIdleConnections()
+		return existing
+	}
+	if r.epClients == nil {
+		r.epClients = make(map[string]*http.Client)
+	}
+	r.epClients[key] = newCli
+	r.mu.Unlock()
+	return newCli
+}
+
+func (r *Resolver) queryEndpoint(ctx context.Context, ep DoHEndpoint, host string) ([]string, time.Duration, error) {
+	u, err := url.Parse(ep.URL)
+	if err != nil {
+		return nil, 0, err
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "http" {
+			port = "80"
+		} else {
+			port = "443"
+		}
+	}
+	if len(ep.StaticIPs) == 0 {
+		return nil, 0, errors.New("DoH endpoint requires at least one static IP")
+	}
+
+	q := u.Query()
+	q.Set("name", host)
+	q.Set("type", "A")
+	u.RawQuery = q.Encode()
+
+	cli := r.endpointClient(ep, u, port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, 0, err
@@ -323,43 +351,7 @@ func (r *Resolver) queryHTTPSEndpoint(ctx context.Context, ep DoHEndpoint, host 
 	q.Set("type", "HTTPS")
 	u.RawQuery = q.Encode()
 
-	var tlsCfg *tls.Config
-	if r.tlsConfig != nil {
-		tlsCfg = r.tlsConfig.Clone()
-	} else {
-		tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12}
-	}
-	if ep.DisableSNI {
-		tlsCfg.ServerName = ""
-		tlsCfg.InsecureSkipVerify = true
-		expectedHost := u.Hostname()
-		tlsCfg.VerifyConnection = func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("no peer certificates")
-			}
-			return cs.PeerCertificates[0].VerifyHostname(expectedHost)
-		}
-	} else if tlsCfg.ServerName == "" {
-		tlsCfg.ServerName = u.Hostname()
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig: tlsCfg,
-		DialContext: func(dctx context.Context, network, _ string) (net.Conn, error) {
-			var dialErr error
-			for _, ip := range ep.StaticIPs {
-				c, err := r.dialDirect(dctx, network, net.JoinHostPort(ip, port))
-				if err == nil {
-					return c, nil
-				}
-				dialErr = err
-			}
-			return nil, dialErr
-		},
-	}
-	defer tr.CloseIdleConnections()
-
-	cli := &http.Client{Transport: tr, Timeout: r.timeout}
+	cli := r.endpointClient(ep, u, port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, 0, err

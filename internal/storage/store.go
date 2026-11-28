@@ -51,10 +51,7 @@ func NewStore(dir string, secretSeed string) (*Store, error) {
 func (s *Store) Get() *config.AppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	b, _ := json.Marshal(s.snapshot)
-	var cp config.AppConfig
-	_ = json.Unmarshal(b, &cp)
-	return &cp
+	return cloneConfig(s.snapshot)
 }
 
 func (s *Store) Save(cfg *config.AppConfig) error {
@@ -170,8 +167,71 @@ func (s *Store) decryptIfNeeded(val string) (string, error) {
 }
 
 func cloneConfig(cfg *config.AppConfig) *config.AppConfig {
-	b, _ := json.Marshal(cfg)
-	var cp config.AppConfig
-	_ = json.Unmarshal(b, &cp)
+	if cfg == nil {
+		return nil
+	}
+	cp := *cfg
+	cp.Subscriptions = append([]config.Subscription(nil), cfg.Subscriptions...)
+	if len(cfg.ExternalNodes) > 0 {
+		cp.ExternalNodes = make([]config.ExternalNode, len(cfg.ExternalNodes))
+		for i, n := range cfg.ExternalNodes {
+			cp.ExternalNodes[i] = n
+			cp.ExternalNodes[i].RawOutbound = cloneAnyMap(n.RawOutbound)
+		}
+	} else {
+		cp.ExternalNodes = nil
+	}
+	cp.Routing.DirectBypass.DoHStaticIPs = append([]string(nil), cfg.Routing.DirectBypass.DoHStaticIPs...)
+	cp.Routing.RemoteRuleSets = append([]config.RemoteRuleSet(nil), cfg.Routing.RemoteRuleSets...)
+	if len(cfg.Routing.CustomRules) > 0 {
+		cp.Routing.CustomRules = make([]config.CustomRule, len(cfg.Routing.CustomRules))
+		for i, r := range cfg.Routing.CustomRules {
+			cp.Routing.CustomRules[i] = r
+			cp.Routing.CustomRules[i].Domain = append([]string(nil), r.Domain...)
+			cp.Routing.CustomRules[i].DomainSuffix = append([]string(nil), r.DomainSuffix...)
+			cp.Routing.CustomRules[i].DomainKeyword = append([]string(nil), r.DomainKeyword...)
+			cp.Routing.CustomRules[i].DomainRegex = append([]string(nil), r.DomainRegex...)
+			cp.Routing.CustomRules[i].IPCIDR = append([]string(nil), r.IPCIDR...)
+			cp.Routing.CustomRules[i].Port = append([]int(nil), r.Port...)
+			cp.Routing.CustomRules[i].ProcessName = append([]string(nil), r.ProcessName...)
+			cp.Routing.CustomRules[i].PackageName = append([]string(nil), r.PackageName...)
+		}
+	} else {
+		cp.Routing.CustomRules = nil
+	}
+	cp.DNS.FakeIPExclude = append([]string(nil), cfg.DNS.FakeIPExclude...)
+	cp.Android.PerAppPackages = append([]string(nil), cfg.Android.PerAppPackages...)
+	if cfg.VPNGate.SelectedNode != nil {
+		nodeCopy := *cfg.VPNGate.SelectedNode
+		cp.VPNGate.SelectedNode = &nodeCopy
+	}
 	return &cp
+}
+
+func cloneAnyMap(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = cloneAnyValue(v)
+	}
+	return dst
+}
+
+func cloneAnyValue(v any) any {
+	switch tv := v.(type) {
+	case map[string]any:
+		return cloneAnyMap(tv)
+	case []any:
+		out := make([]any, len(tv))
+		for i, item := range tv {
+			out[i] = cloneAnyValue(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), tv...)
+	default:
+		return v
+	}
 }
