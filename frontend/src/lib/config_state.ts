@@ -61,6 +61,7 @@ export interface AppFormState {
   probeMode: "builtin" | "custom";
   probeBuiltinURL: string;
   probeCustomURL: string;
+  logsEnabled: boolean;
   minimizeToTray: boolean;
   setSystemProxy: boolean;
   perAppMode: "all" | "whitelist" | "blacklist";
@@ -139,6 +140,7 @@ export function createDefaultFormState(): AppFormState {
     probeMode: "builtin",
     probeBuiltinURL: BUILTIN_PROBE_URLS[0].url,
     probeCustomURL: "",
+    logsEnabled: false,
     minimizeToTray: true,
     setSystemProxy: true,
     perAppMode: "blacklist",
@@ -257,6 +259,9 @@ export function hydrateFormState(
     next.probeBuiltinURL = cfg.probe.test_url || BUILTIN_PROBE_URLS[0].url;
     next.probeCustomURL = cfg.probe.custom_url ?? "";
   }
+  if (cfg.logs) {
+    next.logsEnabled = Boolean(cfg.logs.enabled);
+  }
   if (cfg.linux) {
     next.minimizeToTray = cfg.linux.minimize_to_tray ?? true;
     next.setSystemProxy = cfg.linux.set_system_proxy ?? true;
@@ -364,6 +369,10 @@ export function buildConfigPayload(
       mode: form.probeMode,
       test_url: form.probeBuiltinURL,
       custom_url: form.probeCustomURL.trim(),
+    },
+    logs: {
+      ...base.logs,
+      enabled: form.logsEnabled,
     },
     linux: {
       ...base.linux,

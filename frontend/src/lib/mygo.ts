@@ -126,6 +126,22 @@ export interface GephBridgeStatus {
   protocol: string;
 }
 
+export interface LogEntry {
+  time: string;
+  source: string;
+  message: string;
+}
+
+export interface LogsSnapshot {
+  enabled: boolean;
+  entries: LogEntry[];
+}
+
+export interface ExportLogsResult {
+  path: string;
+  content: string;
+}
+
 export interface VPNGateNode {
   id: string;
   host_name: string;
@@ -244,4 +260,9 @@ export const AppService = {
   ListInstalledApps: () =>
     callGo<InstalledApp[]>("AppService.ListInstalledApps"),
   OpenVpnSettings: () => callGo<boolean>("AppService.OpenVpnSettings"),
+  GetLogs: () => callGo<LogsSnapshot>("AppService.GetLogs"),
+  SetLogsEnabled: (enabled: boolean) =>
+    callGo<void>("AppService.SetLogsEnabled", enabled),
+  ClearLogs: () => callGo<void>("AppService.ClearLogs"),
+  ExportLogs: () => callGo<ExportLogsResult>("AppService.ExportLogs"),
 };

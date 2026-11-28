@@ -366,3 +366,47 @@ func TestAppServiceSubscriptionDirectShareLinkRefreshDeleteAutoBestACSUB01To05(t
 		t.Fatalf("expected only manual node remaining, got %+v", got)
 	}
 }
+
+func TestAppServiceLogsToggleClearAndExportACLOGS0102(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+	defer svc.Shutdown()
+
+	snap := svc.GetLogs(context.Background())
+	if snap.Enabled || len(snap.Entries) != 0 {
+		t.Fatalf("expected logs disabled and empty by default, got %+v", snap)
+	}
+
+	if err := svc.SetLogsEnabled(true); err != nil {
+		t.Fatalf("SetLogsEnabled(true): %v", err)
+	}
+	if !svc.GetConfig().Logs.Enabled {
+		t.Fatalf("expected cfg.Logs.Enabled to persist as true")
+	}
+	snap = svc.GetLogs(context.Background())
+	if !snap.Enabled || len(snap.Entries) == 0 {
+		t.Fatalf("expected enabled logs with startup entry, got %+v", snap)
+	}
+
+	exported, err := svc.ExportLogs(context.Background())
+	if err != nil {
+		t.Fatalf("ExportLogs failed: %v", err)
+	}
+	if exported.Path == "" || !strings.Contains(exported.Content, "diagnostic logging enabled") {
+		t.Fatalf("unexpected export result: %+v", exported)
+	}
+
+	svc.ClearLogs()
+	if got := svc.GetLogs(context.Background()).Entries; len(got) != 0 {
+		t.Fatalf("expected 0 entries after ClearLogs, got %d", len(got))
+	}
+
+	if err := svc.SetLogsEnabled(false); err != nil {
+		t.Fatalf("SetLogsEnabled(false): %v", err)
+	}
+	if svc.GetConfig().Logs.Enabled {
+		t.Fatalf("expected cfg.Logs.Enabled to persist as false")
+	}
+}

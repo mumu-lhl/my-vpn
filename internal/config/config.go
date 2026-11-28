@@ -51,6 +51,7 @@ type AppConfig struct {
 	Routing       RoutingConfig  `json:"routing"`
 	DNS           DNSConfig      `json:"dns"`
 	Probe         ProbeConfig    `json:"probe"`
+	Logs          LogsConfig     `json:"logs"`
 	Linux         LinuxConfig    `json:"linux"`
 	Android       AndroidConfig  `json:"android"`
 }
@@ -61,6 +62,10 @@ type ProbeConfig struct {
 	CustomURL     string `json:"custom_url,omitempty"`
 	TimeoutMs     int    `json:"timeout_ms"`
 	Hop1ProbePort int    `json:"hop1_probe_port"`
+}
+
+type LogsConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type InboundConfig struct {

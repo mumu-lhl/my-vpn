@@ -291,6 +291,15 @@ func (s *Supervisor) FetchConnInfo(ctx context.Context, overrideURL string) (*Co
 	return &info, nil
 }
 
+// FetchRecentLogs queries geph5-client's recent_logs RPC for diagnostic log lines.
+func (s *Supervisor) FetchRecentLogs(ctx context.Context, overrideURL string) ([]string, error) {
+	var lines []string
+	if err := s.callControlRPC(ctx, overrideURL, "recent_logs", &lines); err != nil {
+		return nil, err
+	}
+	return lines, nil
+}
+
 // FetchExits queries geph5-client's nanorpc control_listen endpoint for available exit locations.
 func (s *Supervisor) FetchExits(ctx context.Context, overrideURL string) ([]ExitLocation, error) {
 	var result struct {

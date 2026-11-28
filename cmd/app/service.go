@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mumu-lhl/looma/internal/applog"
 	"github.com/mumu-lhl/looma/internal/config"
 	"github.com/mumu-lhl/looma/internal/core"
 	"github.com/mumu-lhl/looma/internal/dpi"
@@ -44,6 +46,7 @@ type AppService struct {
 	usingAndroidVPN bool
 	tunStoppedOff   func()
 	bridgeGeoCache  map[string]string
+	logs            *applog.Buffer
 	subStopCh       chan struct{}
 	subStopOnce     sync.Once
 	onStateChange   func()
@@ -54,6 +57,9 @@ func NewAppService(dataDir string) (*AppService, error) {
 	if err != nil {
 		return nil, err
 	}
+	logBuf := applog.NewBuffer(applog.DefaultCapacity)
+	logBuf.SetEnabled(st.Get().Logs.Enabled)
+
 	defaultSock := filepath.Join(os.TempDir(), fmt.Sprintf("looma-%d", os.Getuid()), "looma-helper.sock")
 	svc := &AppService{
 		dataDir:        dataDir,
@@ -64,6 +70,7 @@ func NewAppService(dataDir string) (*AppService, error) {
 		helperSock:     defaultSock,
 		androidBridge:  newMyGoAndroidBridge(),
 		bridgeGeoCache: map[string]string{},
+		logs:           logBuf,
 		subStopCh:      make(chan struct{}),
 	}
 	if svc.androidBridge.Available() {
@@ -113,6 +120,9 @@ func (s *AppService) GetConfig() *config.AppConfig {
 func (s *AppService) SaveConfig(cfg *config.AppConfig) error {
 	if err := s.store.Save(cfg); err != nil {
 		return err
+	}
+	if s.logs != nil && cfg != nil {
+		s.logs.SetEnabled(cfg.Logs.Enabled)
 	}
 	s.notifyStateChange()
 	return nil
@@ -328,6 +338,7 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 
 	res, err := s.engine.Start(ctx, cfg, tunFD)
 	if err != nil {
+		s.logs.Logf("core", "engine start failed: %v", err)
 		if s.usingAndroidVPN && s.androidBridge != nil {
 			stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			_ = s.androidBridge.Stop(stopCtx)
@@ -342,6 +353,7 @@ func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
 	if runtime.GOOS == "linux" && cfg.Inbound.Mode == config.InboundProxy && cfg.Linux.SetSystemProxy {
 		_ = platform.SetGNOMESystemProxy(true, cfg.Inbound.HTTPPort, cfg.Inbound.SocksPort)
 	}
+	s.logs.Logf("core", "connected: mode=%s chain=%s tun_fd=%d", cfg.Inbound.Mode, formatChainDesc(cfg), tunFD)
 	s.mu.Unlock()
 	s.notifyStateChange()
 	return res, nil
@@ -376,6 +388,7 @@ func (s *AppService) Disconnect() error {
 	if err := s.engine.Stop(); err != nil && firstErr == nil {
 		firstErr = err
 	}
+	s.logs.Logf("core", "disconnected")
 	s.mu.Unlock()
 	s.notifyStateChange()
 	return firstErr
@@ -911,6 +924,104 @@ func (s *AppService) SelectGephExit(ctx context.Context, country, city string) e
 	}
 	s.notifyStateChange()
 	return nil
+}
+
+func (s *AppService) LogWriter() io.Writer {
+	if s.logs == nil {
+		return io.Discard
+	}
+	return s.logs
+}
+
+type LogsSnapshot struct {
+	Enabled bool           `json:"enabled"`
+	Entries []applog.Entry `json:"entries"`
+}
+
+type ExportLogsResult struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+func (s *AppService) GetLogs(ctx context.Context) LogsSnapshot {
+	if s.logs == nil {
+		return LogsSnapshot{}
+	}
+	enabled := s.logs.Enabled()
+	entries := s.logs.Entries()
+	if enabled && s.geph != nil && s.geph.IsRunning() {
+		cfg := s.store.Get()
+		ctrlPort := cfg.Geph.ControlPort
+		if ctrlPort <= 0 {
+			ctrlPort = 19910
+		}
+		lctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		if lines, err := s.geph.FetchRecentLogs(lctx, fmt.Sprintf("http://127.0.0.1:%d", ctrlPort)); err == nil {
+			for _, line := range lines {
+				if trimmed := strings.TrimSpace(line); trimmed != "" {
+					entries = append(entries, applog.Entry{
+						Time:    "geph5",
+						Source:  "geph5",
+						Message: trimmed,
+					})
+				}
+			}
+		}
+		cancel()
+	}
+	return LogsSnapshot{
+		Enabled: enabled,
+		Entries: entries,
+	}
+}
+
+func (s *AppService) SetLogsEnabled(enabled bool) error {
+	cfg := s.store.Get()
+	cfg.Logs.Enabled = enabled
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+	if s.logs != nil {
+		s.logs.SetEnabled(enabled)
+		if enabled {
+			s.logs.Logf("app", "diagnostic logging enabled")
+		}
+	}
+	s.notifyStateChange()
+	return nil
+}
+
+func (s *AppService) ClearLogs() {
+	if s.logs != nil {
+		s.logs.Clear()
+	}
+}
+
+func (s *AppService) ExportLogs(ctx context.Context) (*ExportLogsResult, error) {
+	if s.logs == nil {
+		return &ExportLogsResult{}, nil
+	}
+	snap := s.GetLogs(ctx)
+	var sb strings.Builder
+	for _, e := range snap.Entries {
+		sb.WriteString("[")
+		sb.WriteString(e.Time)
+		sb.WriteString("] [")
+		sb.WriteString(e.Source)
+		sb.WriteString("] ")
+		sb.WriteString(e.Message)
+		sb.WriteByte('\n')
+	}
+	exportDir := filepath.Join(s.dataDir, "exports")
+	if err := os.MkdirAll(exportDir, 0o700); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(exportDir, fmt.Sprintf("looma-logs-%s.log", time.Now().Format("20060102-150405")))
+	content := sb.String()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return nil, err
+	}
+	return &ExportLogsResult{Path: path, Content: content}, nil
 }
 
 func (s *AppService) GetClassicCNApps() []platform.ClassicCNApp {

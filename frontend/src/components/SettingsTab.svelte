@@ -1,9 +1,11 @@
 <script lang="ts">
   import {
+    Activity,
     AppWindow,
     ArrowLeft,
     ChevronRight,
     ExternalLink,
+    FileText,
     Globe,
     Laptop,
     Moon,
@@ -15,13 +17,15 @@
   import type { PlatformUIProfile } from "../lib/platform";
   import type { TestURLPreset } from "../lib/probe";
   import type { ThemeMode } from "../lib/theme";
+  import LogsSubpage from "./LogsSubpage.svelte";
   import PerAppSelector from "./PerAppSelector.svelte";
   import ProtocolsTab from "./ProtocolsTab.svelte";
   import RoutingTab from "./RoutingTab.svelte";
   import Select from "./Select.svelte";
   import Toggle from "./Toggle.svelte";
 
-  export type SettingsSubpage = null | "protocols" | "routing" | "per_app";
+  export type SettingsSubpage =
+    null | "protocols" | "routing" | "per_app" | "probe" | "logs";
 
   interface Props {
     form: AppFormState;
@@ -92,7 +96,15 @@
     protocols: "节点与协议",
     routing: "路由与 DNS",
     per_app: "分应用代理",
+    probe: "连通性检测地址",
+    logs: "诊断日志",
   };
+
+  let activeProbeSummary = $derived(
+    form.probeMode === "custom" && form.probeCustomURL.trim()
+      ? form.probeCustomURL.trim()
+      : form.probeBuiltinURL,
+  );
 
   let perAppSummary = $derived(
     form.perAppMode === "all"
@@ -151,6 +163,85 @@
         {bridgeReady}
         isAndroid={platformUI.isAndroid}
         onChange={onAutoSave}
+      />
+    {:else if subpage === "probe"}
+      <section
+        class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div>
+          <h2 class="text-base font-semibold">连通性检测地址</h2>
+          <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            用于检测各跳延迟与可用性，修改后自动保存
+          </p>
+        </div>
+
+        <div
+          role="tablist"
+          aria-label="检测地址来源"
+          class="inline-grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={form.probeMode === "builtin"}
+            onclick={() => {
+              form.probeMode = "builtin";
+              onAutoSave();
+            }}
+            class="rounded-md px-3 py-1.5 text-xs font-medium transition {form.probeMode ===
+            'builtin'
+              ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-700 dark:text-zinc-100'
+              : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400'}"
+          >
+            内置地址
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={form.probeMode === "custom"}
+            onclick={() => {
+              form.probeMode = "custom";
+              if (customProbeValid) onAutoSave();
+            }}
+            class="rounded-md px-3 py-1.5 text-xs font-medium transition {form.probeMode ===
+            'custom'
+              ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-700 dark:text-zinc-100'
+              : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400'}"
+          >
+            自定义地址
+          </button>
+        </div>
+
+        {#if form.probeMode === "builtin"}
+          <Select
+            bind:value={form.probeBuiltinURL}
+            options={builtinProbePresets.map((preset) => ({
+              value: preset.url,
+              label: `${preset.label} — ${preset.url}`,
+            }))}
+            onchange={onAutoSave}
+          />
+        {:else}
+          <input
+            class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
+            type="url"
+            bind:value={form.probeCustomURL}
+            oninput={onDebouncedAutoSave}
+            onblur={onAutoSave}
+            placeholder="https://cp.cloudflare.com/generate_204"
+          />
+          {#if !customProbeValid}
+            <p class="text-xs text-red-600 dark:text-red-400">
+              请输入有效的 http:// 或 https:// 地址（输入合法后自动保存）
+            </p>
+          {/if}
+        {/if}
+      </section>
+    {:else if subpage === "logs"}
+      <LogsSubpage
+        {bridgeReady}
+        enabled={form.logsEnabled}
+        onToggleEnabled={(next) => (form.logsEnabled = next)}
       />
     {/if}
   </div>
@@ -229,80 +320,54 @@
         <ChevronRight class="h-4 w-4 shrink-0 text-zinc-400" />
       </button>
     {/if}
-  </section>
 
-  <!-- Connectivity Probe URL (instant auto-save, no Save button) -->
-  <section
-    class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
-  >
-    <div>
-      <h2 class="text-base font-semibold">连通性检测地址</h2>
-      <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-        用于检测各跳延迟与可用性，修改后自动保存
-      </p>
-    </div>
-
-    <div
-      role="tablist"
-      aria-label="检测地址来源"
-      class="inline-grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800"
+    <button
+      type="button"
+      onclick={() => onSelectSubpage("probe")}
+      class="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
     >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={form.probeMode === "builtin"}
-        onclick={() => {
-          form.probeMode = "builtin";
-          onAutoSave();
-        }}
-        class="rounded-md px-3 py-1.5 text-xs font-medium transition {form.probeMode ===
-        'builtin'
-          ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-700 dark:text-zinc-100'
-          : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400'}"
-      >
-        内置地址
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={form.probeMode === "custom"}
-        onclick={() => {
-          form.probeMode = "custom";
-          if (customProbeValid) onAutoSave();
-        }}
-        class="rounded-md px-3 py-1.5 text-xs font-medium transition {form.probeMode ===
-        'custom'
-          ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-700 dark:text-zinc-100'
-          : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400'}"
-      >
-        自定义地址
-      </button>
-    </div>
+      <div class="flex min-w-0 items-center gap-3">
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-400"
+        >
+          <Activity class="h-4 w-4" />
+        </span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            连通性检测地址
+          </p>
+          <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+            {activeProbeSummary}
+          </p>
+        </div>
+      </div>
+      <ChevronRight class="h-4 w-4 shrink-0 text-zinc-400" />
+    </button>
 
-    {#if form.probeMode === "builtin"}
-      <Select
-        bind:value={form.probeBuiltinURL}
-        options={builtinProbePresets.map((preset) => ({
-          value: preset.url,
-          label: `${preset.label} — ${preset.url}`,
-        }))}
-        onchange={onAutoSave}
-      />
-    {:else}
-      <input
-        class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
-        type="url"
-        bind:value={form.probeCustomURL}
-        oninput={onDebouncedAutoSave}
-        onblur={onAutoSave}
-        placeholder="https://cp.cloudflare.com/generate_204"
-      />
-      {#if !customProbeValid}
-        <p class="text-xs text-red-600 dark:text-red-400">
-          请输入有效的 http:// 或 https:// 地址（输入合法后自动保存）
-        </p>
-      {/if}
-    {/if}
+    <button
+      type="button"
+      onclick={() => onSelectSubpage("logs")}
+      class="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+        >
+          <FileText class="h-4 w-4" />
+        </span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            诊断日志
+          </p>
+          <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+            {form.logsEnabled
+              ? "已开启 · 查看、复制或导出运行日志"
+              : "已关闭 · 排错时可临时开启"}
+          </p>
+        </div>
+      </div>
+      <ChevronRight class="h-4 w-4 shrink-0 text-zinc-400" />
+    </button>
   </section>
 
   <!-- Appearance & Platform-Specific System Settings -->

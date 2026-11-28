@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.SetOutput(io.MultiWriter(os.Stderr, svc.LogWriter()))
 	mygo.Bind(svc)
 
 	var (
