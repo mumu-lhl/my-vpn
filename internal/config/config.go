@@ -163,9 +163,15 @@ type Subscription struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
 	URL                string `json:"url"`
+	ProxyMode          string `json:"proxy_mode,omitempty"` // "auto" (default), "proxy", "direct"
 	UpdateIntervalHour int    `json:"update_interval_hour"`
 	LastUpdatedUnix    int64  `json:"last_updated_unix"`
 	Enabled            bool   `json:"enabled"`
+	UploadBytes        int64  `json:"upload_bytes,omitempty"`
+	DownloadBytes      int64  `json:"download_bytes,omitempty"`
+	TotalBytes         int64  `json:"total_bytes,omitempty"`
+	ExpireUnix         int64  `json:"expire_unix,omitempty"`
+	LastError          string `json:"last_error,omitempty"`
 }
 
 type ExternalNode struct {
@@ -418,6 +424,30 @@ func (c *AppConfig) Validate() error {
 }
 
 func (c *AppConfig) FindExternalNode(id string) *ExternalNode {
+	if id == "auto" || strings.HasPrefix(id, "auto:") {
+		subFilter := ""
+		if strings.HasPrefix(id, "auto:") {
+			subFilter = strings.TrimPrefix(id, "auto:")
+		}
+		var best *ExternalNode
+		var fallback *ExternalNode
+		for i := range c.ExternalNodes {
+			n := &c.ExternalNodes[i]
+			if subFilter != "" && n.SubscriptionID != subFilter {
+				continue
+			}
+			if fallback == nil {
+				fallback = n
+			}
+			if n.LatencyMs > 0 && (best == nil || n.LatencyMs < best.LatencyMs) {
+				best = n
+			}
+		}
+		if best != nil {
+			return best
+		}
+		return fallback
+	}
 	for i := range c.ExternalNodes {
 		if c.ExternalNodes[i].ID == id {
 			return &c.ExternalNodes[i]

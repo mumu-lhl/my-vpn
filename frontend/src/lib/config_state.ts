@@ -1,5 +1,5 @@
 import type { ChainConfig, HopKind } from "./chain";
-import type { ExternalNode } from "./mygo";
+import type { ExternalNode, SubscriptionItem } from "./mygo";
 import { BUILTIN_PROBE_URLS } from "./probe";
 
 export type DirectBypassScope = "global" | "list";
@@ -65,6 +65,7 @@ export interface AppFormState {
   setSystemProxy: boolean;
   perAppMode: "all" | "whitelist" | "blacklist";
   excludedPackages: string[];
+  subscriptions: SubscriptionItem[];
   externalNodes: ExternalNode[];
 }
 
@@ -142,6 +143,7 @@ export function createDefaultFormState(): AppFormState {
     setSystemProxy: true,
     perAppMode: "blacklist",
     excludedPackages: [],
+    subscriptions: [],
     externalNodes: [],
   };
 }
@@ -264,6 +266,9 @@ export function hydrateFormState(
     next.excludedPackages = Array.isArray(cfg.android.per_app_packages)
       ? cfg.android.per_app_packages
       : [];
+  }
+  if (Array.isArray(cfg.subscriptions)) {
+    next.subscriptions = cfg.subscriptions;
   }
   if (Array.isArray(cfg.external_nodes)) {
     next.externalNodes = cfg.external_nodes;

@@ -33,8 +33,11 @@
     themeMode: ThemeMode;
     subName: string;
     subURL: string;
+    subIntervalHours: number;
+    subProxyMode: "auto" | "proxy" | "direct";
     sortedExternalNodes: ExternalNode[];
     testingNodes: boolean;
+    refreshingSubId: string;
     onSelectSubpage: (sub: SettingsSubpage) => void;
     onAutoSave: () => void;
     onDebouncedAutoSave: () => void;
@@ -42,6 +45,15 @@
     onSetTheme: (mode: ThemeMode) => void;
     onOpenGephExits: () => void;
     onImportSub: () => void;
+    onRefreshSub: (subId: string) => void;
+    onUpdateSubSettings: (
+      subId: string,
+      name: string,
+      intervalHours: number,
+      proxyMode: "auto" | "proxy" | "direct",
+    ) => void;
+    onDeleteSub: (subId: string) => void;
+    onDeleteNode: (nodeId: string) => void;
     onTestAllNodes: () => void;
     onOpenAndroidVpnSettings: () => void;
   }
@@ -56,8 +68,11 @@
     themeMode,
     subName = $bindable(""),
     subURL = $bindable(""),
+    subIntervalHours = $bindable(24),
+    subProxyMode = $bindable("auto"),
     sortedExternalNodes,
     testingNodes,
+    refreshingSubId,
     onSelectSubpage,
     onAutoSave,
     onDebouncedAutoSave,
@@ -65,6 +80,10 @@
     onSetTheme,
     onOpenGephExits,
     onImportSub,
+    onRefreshSub,
+    onUpdateSubSettings,
+    onDeleteSub,
+    onDeleteNode,
     onTestAllNodes,
     onOpenAndroidVpnSettings,
   }: Props = $props();
@@ -108,12 +127,19 @@
         {form}
         bind:subName
         bind:subURL
+        bind:subIntervalHours
+        bind:subProxyMode
         {sortedExternalNodes}
         {testingNodes}
+        {refreshingSubId}
         {onOpenGephExits}
         {onAutoSave}
         {onSave}
         {onImportSub}
+        {onRefreshSub}
+        {onUpdateSubSettings}
+        {onDeleteSub}
+        {onDeleteNode}
         {onTestAllNodes}
       />
     {:else if subpage === "routing"}

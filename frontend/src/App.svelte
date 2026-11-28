@@ -82,6 +82,9 @@
   let vpngateError = $state("");
   let subName = $state("");
   let subURL = $state("");
+  let subIntervalHours = $state(24);
+  let subProxyMode = $state<"auto" | "proxy" | "direct">("auto");
+  let refreshingSubId = $state("");
   let testingNodes = $state(false);
 
   let builtinProbePresets = $state<TestURLPreset[]>(BUILTIN_PROBE_URLS);
@@ -103,9 +106,11 @@
     form.probeMode !== "custom" || validateProbeUrl(form.probeCustomURL),
   );
   let sortedExternalNodes = $derived(
-    [...form.externalNodes].sort(
-      (a, b) => (a.latency_ms || 999999) - (b.latency_ms || 999999),
-    ),
+    [...form.externalNodes].sort((a, b) => {
+      const la = a.latency_ms && a.latency_ms > 0 ? a.latency_ms : 999999;
+      const lb = b.latency_ms && b.latency_ms > 0 ? b.latency_ms : 999999;
+      return la - lb;
+    }),
   );
 
   const errMsg = (err: unknown) =>
@@ -484,18 +489,91 @@
       statusNotice = "请先启动客户端后再导入订阅";
       return;
     }
+    statusError = "";
     try {
       const nodes = await AppService.ImportSubscription(
         subName.trim() || "订阅",
         subURL.trim(),
-        24,
+        subIntervalHours,
+        subProxyMode,
       );
-      form.externalNodes = [...form.externalNodes, ...nodes];
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      form = hydrateFormState(cfg, form);
       subName = "";
       subURL = "";
       statusNotice = `已导入 ${nodes.length} 个节点`;
     } catch (err) {
       statusError = `导入订阅失败：${errMsg(err)}`;
+    }
+  }
+
+  async function refreshSub(subId: string) {
+    if (!bridgeReady || refreshingSubId) return;
+    refreshingSubId = subId;
+    statusError = "";
+    try {
+      const nodes = await AppService.RefreshSubscription(subId);
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      form = hydrateFormState(cfg, form);
+      statusNotice = `已更新订阅，共 ${nodes.length} 个节点`;
+    } catch (err) {
+      const cfg = await AppService.GetConfig().catch(() => null);
+      if (cfg) {
+        rawConfig = cfg;
+        form = hydrateFormState(cfg, form);
+      }
+      statusError = `更新订阅失败：${errMsg(err)}`;
+    } finally {
+      refreshingSubId = "";
+    }
+  }
+
+  async function updateSubSettings(
+    subId: string,
+    name: string,
+    intervalHours: number,
+    proxyMode: "auto" | "proxy" | "direct",
+  ) {
+    if (!bridgeReady) return;
+    try {
+      await AppService.UpdateSubscriptionSettings(
+        subId,
+        name,
+        intervalHours,
+        proxyMode,
+      );
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      form = hydrateFormState(cfg, form);
+    } catch (err) {
+      statusError = `更新订阅设置失败：${errMsg(err)}`;
+    }
+  }
+
+  async function deleteSub(subId: string) {
+    if (!bridgeReady) return;
+    try {
+      await AppService.DeleteSubscription(subId);
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      form = hydrateFormState(cfg, form);
+      statusNotice = "已删除订阅及其节点";
+    } catch (err) {
+      statusError = `删除订阅失败：${errMsg(err)}`;
+    }
+  }
+
+  async function deleteExternalNode(nodeId: string) {
+    if (!bridgeReady) return;
+    try {
+      await AppService.DeleteExternalNode(nodeId);
+      const cfg = await AppService.GetConfig();
+      rawConfig = cfg;
+      form = hydrateFormState(cfg, form);
+    } catch (err) {
+      statusError = `删除节点失败：${errMsg(err)}`;
     }
   }
 
@@ -717,8 +795,11 @@
         {themeMode}
         bind:subName
         bind:subURL
+        bind:subIntervalHours
+        bind:subProxyMode
         {sortedExternalNodes}
         {testingNodes}
+        {refreshingSubId}
         onSelectSubpage={(sub) =>
           navigateTo("settings", { settingsSubpage: sub })}
         onAutoSave={() => void persistConfig(false)}
@@ -727,6 +808,10 @@
         onSetTheme={selectTheme}
         onOpenGephExits={openDashboardGephExits}
         onImportSub={importSub}
+        onRefreshSub={refreshSub}
+        onUpdateSubSettings={updateSubSettings}
+        onDeleteSub={deleteSub}
+        onDeleteNode={deleteExternalNode}
         onTestAllNodes={testAllNodes}
         onOpenAndroidVpnSettings={openAndroidVpnSettings}
       />

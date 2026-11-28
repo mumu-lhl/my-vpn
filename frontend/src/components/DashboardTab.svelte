@@ -116,17 +116,21 @@
     { value: "external", label: "外部节点" },
   ];
 
-  let externalNodeOptions = $derived(
-    sortedExternalNodes.map((node) => ({
-      value: node.id,
-      label: `${node.name} (${node.protocol})`,
+  let externalNodeOptions = $derived([
+    { value: "auto", label: "⚡ 自动选择优质节点（全部）" },
+    ...form.subscriptions.map((sub) => ({
+      value: `auto:${sub.id}`,
+      label: `⚡ 自动优选 · ${sub.name}`,
     })),
-  );
+    ...sortedExternalNodes.map((node) => ({
+      value: node.id,
+      label: `${node.name} (${node.protocol})${node.latency_ms && node.latency_ms > 0 ? ` · ${node.latency_ms}ms` : ""}`,
+    })),
+  ]);
 
   function setHop(which: "hop1" | "hop2", kind: string) {
     const nextKind = kind as HopKind;
-    const defaultNodeId =
-      nextKind === "external" ? sortedExternalNodes[0]?.id : undefined;
+    const defaultNodeId = nextKind === "external" ? "auto" : undefined;
     form.chain = {
       ...form.chain,
       two_hop:

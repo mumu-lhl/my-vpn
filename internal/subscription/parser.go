@@ -381,14 +381,45 @@ func stableNodeID(subID, name, srv string, port int) string {
 	return "node-" + hex.EncodeToString(h[:6])
 }
 
+type UserInfo struct {
+	UploadBytes   int64 `json:"upload_bytes,omitempty"`
+	DownloadBytes int64 `json:"download_bytes,omitempty"`
+	TotalBytes    int64 `json:"total_bytes,omitempty"`
+	ExpireUnix    int64 `json:"expire_unix,omitempty"`
+}
+
+type FetchResult struct {
+	Nodes    []config.ExternalNode
+	UserInfo UserInfo
+}
+
 type Fetcher struct {
 	Client *http.Client
 }
 
 func (f *Fetcher) Fetch(ctx context.Context, sub config.Subscription) ([]config.ExternalNode, error) {
+	res, err := f.FetchWithProxy(ctx, sub, "")
+	if err != nil {
+		return nil, err
+	}
+	return res.Nodes, nil
+}
+
+func (f *Fetcher) FetchWithProxy(ctx context.Context, sub config.Subscription, proxyURL string) (*FetchResult, error) {
 	cli := f.Client
 	if cli == nil {
-		cli = bootstrap.NewHTTPClient(bootstrap.Options{Timeout: 20 * time.Second})
+		if strings.TrimSpace(proxyURL) != "" {
+			parsed, err := url.Parse(proxyURL)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
+			}
+			cli = &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: &http.Transport{Proxy: http.ProxyURL(parsed)},
+			}
+		} else {
+			cli = bootstrap.NewHTTPClient(bootstrap.Options{Timeout: 20 * time.Second})
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sub.URL, nil)
 	if err != nil {
@@ -407,5 +438,37 @@ func (f *Fetcher) Fetch(ctx context.Context, sub config.Subscription) ([]config.
 	if err != nil {
 		return nil, err
 	}
-	return ParseAuto(body, sub.ID)
+	nodes, err := ParseAuto(body, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &FetchResult{
+		Nodes:    nodes,
+		UserInfo: parseSubscriptionUserinfo(resp.Header.Get("Subscription-Userinfo")),
+	}, nil
+}
+
+func parseSubscriptionUserinfo(raw string) UserInfo {
+	var info UserInfo
+	for _, part := range strings.Split(raw, ";") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		val, err := strconv.ParseInt(strings.TrimSpace(kv[1]), 10, 64)
+		if err != nil {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(kv[0])) {
+		case "upload":
+			info.UploadBytes = val
+		case "download":
+			info.DownloadBytes = val
+		case "total":
+			info.TotalBytes = val
+		case "expire":
+			info.ExpireUnix = val
+		}
+	}
+	return info
 }

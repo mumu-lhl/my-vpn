@@ -81,8 +81,24 @@ export interface LANInfo {
   allow_lan: boolean;
 }
 
+export interface SubscriptionItem {
+  id: string;
+  name: string;
+  url: string;
+  proxy_mode?: "auto" | "proxy" | "direct";
+  update_interval_hour: number;
+  last_updated_unix: number;
+  enabled: boolean;
+  upload_bytes?: number;
+  download_bytes?: number;
+  total_bytes?: number;
+  expire_unix?: number;
+  last_error?: string;
+}
+
 export interface ExternalNode {
   id: string;
+  subscription_id?: string;
   name: string;
   protocol: string;
   server: string;
@@ -167,13 +183,38 @@ export const AppService = {
   GetBuiltinProbeURLs: () =>
     callGo<TestURLPreset[]>("AppService.GetBuiltinProbeURLs"),
   ProbeChain: () => callGo<ChainProbeResult>("AppService.ProbeChain"),
-  ImportSubscription: (name: string, url: string, intervalHours: number) =>
+  ImportSubscription: (
+    name: string,
+    url: string,
+    intervalHours: number,
+    proxyMode = "auto",
+  ) =>
     callGo<ExternalNode[]>(
       "AppService.ImportSubscription",
       name,
       url,
       intervalHours,
+      proxyMode,
     ),
+  RefreshSubscription: (subId: string) =>
+    callGo<ExternalNode[]>("AppService.RefreshSubscription", subId),
+  UpdateSubscriptionSettings: (
+    subId: string,
+    name: string,
+    intervalHours: number,
+    proxyMode: string,
+  ) =>
+    callGo<void>(
+      "AppService.UpdateSubscriptionSettings",
+      subId,
+      name,
+      intervalHours,
+      proxyMode,
+    ),
+  DeleteSubscription: (subId: string) =>
+    callGo<void>("AppService.DeleteSubscription", subId),
+  DeleteExternalNode: (nodeId: string) =>
+    callGo<void>("AppService.DeleteExternalNode", nodeId),
   TestAllNodes: () => callGo<SpeedTestResult[]>("AppService.TestAllNodes"),
   FetchGephExits: () => callGo<GephExitLocation[]>("AppService.FetchGephExits"),
   GetGephBridgeStatus: () =>

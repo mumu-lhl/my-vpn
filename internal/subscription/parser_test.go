@@ -72,4 +72,17 @@ proxies:
 	if err != nil || len(fetched) != 7 {
 		t.Fatalf("HTTP Fetch failed: err=%v len=%d", err, len(fetched))
 	}
+
+	srvInfo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Subscription-Userinfo", "upload=1024; download=2048; total=1073741824; expire=1893456000")
+		_, _ = w.Write([]byte(encoded))
+	}))
+	defer srvInfo.Close()
+	res, err := (&Fetcher{Client: srvInfo.Client()}).FetchWithProxy(context.Background(), config.Subscription{ID: "sub-info", URL: srvInfo.URL}, "")
+	if err != nil {
+		t.Fatalf("FetchWithProxy failed: %v", err)
+	}
+	if res.UserInfo.UploadBytes != 1024 || res.UserInfo.DownloadBytes != 2048 || res.UserInfo.TotalBytes != 1073741824 || res.UserInfo.ExpireUnix != 1893456000 {
+		t.Fatalf("unexpected Subscription-Userinfo: %+v", res.UserInfo)
+	}
 }

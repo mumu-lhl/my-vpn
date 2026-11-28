@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -290,5 +292,77 @@ func TestAppServiceVPNGateFetchRequiresProxyAndSelectsNodeACVPNGATE01ACVPNGATE04
 	cfg := svc.GetConfig()
 	if cfg.VPNGate.SelectedNode == nil || cfg.VPNGate.SelectedNode.ID != node.ID {
 		t.Fatalf("expected selected VPNGate node %q, got %+v", node.ID, cfg.VPNGate.SelectedNode)
+	}
+}
+
+func TestAppServiceSubscriptionDirectShareLinkRefreshDeleteAutoBestACSUB01To05(t *testing.T) {
+	svc, err := NewAppService(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewAppService: %v", err)
+	}
+	defer svc.Shutdown()
+
+	// AC-SUB-01: Direct share link import without HTTP request.
+	manualNodes, err := svc.ImportSubscription(context.Background(), "Manual", "vless://uuid-1@127.0.0.1:443?sni=example.com#manual-vless", 24, "auto")
+	if err != nil || len(manualNodes) != 1 || manualNodes[0].SubscriptionID != "manual" {
+		t.Fatalf("expected 1 manual node, got nodes=%+v err=%v", manualNodes, err)
+	}
+
+	// AC-SUB-02: Subscription URL import + RefreshSubscription replacement + proxy mode check.
+	subPayload := "vless://uuid-2@127.0.0.1:8443#sub-node-1\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Subscription-Userinfo", "upload=100; download=200; total=1000")
+		_, _ = w.Write([]byte(subPayload))
+	}))
+	defer srv.Close()
+
+	subNodes, err := svc.ImportSubscription(context.Background(), "MySub", srv.URL, 6, "direct")
+	if err != nil || len(subNodes) != 1 {
+		t.Fatalf("ImportSubscription URL failed: nodes=%+v err=%v", subNodes, err)
+	}
+	cfg := svc.GetConfig()
+	if len(cfg.Subscriptions) != 1 || cfg.Subscriptions[0].TotalBytes != 1000 {
+		t.Fatalf("expected 1 subscription with userinfo, got %+v", cfg.Subscriptions)
+	}
+	subID := cfg.Subscriptions[0].ID
+
+	// Update server payload and refresh subscription: old sub node replaced, manual node preserved.
+	subPayload = "vless://uuid-3@127.0.0.1:9443#sub-node-2\nvless://uuid-4@127.0.0.1:9444#sub-node-3\n"
+	refreshed, err := svc.RefreshSubscription(context.Background(), subID)
+	if err != nil || len(refreshed) != 2 {
+		t.Fatalf("RefreshSubscription failed: nodes=%+v err=%v", refreshed, err)
+	}
+	cfg = svc.GetConfig()
+	if len(cfg.ExternalNodes) != 3 {
+		t.Fatalf("expected 1 manual + 2 refreshed nodes = 3, got %d", len(cfg.ExternalNodes))
+	}
+
+	// Proxy-only mode while disconnected must fail cleanly.
+	if err := svc.UpdateSubscriptionSettings(subID, "MySubRenamed", 12, "proxy"); err != nil {
+		t.Fatalf("UpdateSubscriptionSettings failed: %v", err)
+	}
+	if _, err := svc.RefreshSubscription(context.Background(), subID); err == nil {
+		t.Fatalf("expected proxy-only refresh to fail when disconnected")
+	}
+
+	// AC-SUB-05: Auto-best selection picks lowest positive latency within scope.
+	cfg = svc.GetConfig()
+	cfg.ExternalNodes[0].LatencyMs = 150
+	cfg.ExternalNodes[1].LatencyMs = 25
+	cfg.ExternalNodes[2].LatencyMs = -1
+	_ = svc.SaveConfig(cfg)
+	if best := svc.GetConfig().FindExternalNode("auto"); best == nil || best.ID != cfg.ExternalNodes[1].ID {
+		t.Fatalf("expected auto to pick lowest latency node %s, got %+v", cfg.ExternalNodes[1].ID, best)
+	}
+	if bestSub := svc.GetConfig().FindExternalNode("auto:" + subID); bestSub == nil || bestSub.ID != cfg.ExternalNodes[1].ID {
+		t.Fatalf("expected auto:%s to pick %s, got %+v", subID, cfg.ExternalNodes[1].ID, bestSub)
+	}
+
+	// Delete subscription removes its nodes while keeping manual node.
+	if err := svc.DeleteSubscription(subID); err != nil {
+		t.Fatalf("DeleteSubscription failed: %v", err)
+	}
+	if got := svc.GetConfig().ExternalNodes; len(got) != 1 || got[0].SubscriptionID != "manual" {
+		t.Fatalf("expected only manual node remaining, got %+v", got)
 	}
 }

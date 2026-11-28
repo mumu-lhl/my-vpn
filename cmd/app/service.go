@@ -44,6 +44,8 @@ type AppService struct {
 	usingAndroidVPN bool
 	tunStoppedOff   func()
 	bridgeGeoCache  map[string]string
+	subStopCh       chan struct{}
+	subStopOnce     sync.Once
 	onStateChange   func()
 }
 
@@ -62,6 +64,7 @@ func NewAppService(dataDir string) (*AppService, error) {
 		helperSock:     defaultSock,
 		androidBridge:  newMyGoAndroidBridge(),
 		bridgeGeoCache: map[string]string{},
+		subStopCh:      make(chan struct{}),
 	}
 	if svc.androidBridge.Available() {
 		svc.tunStoppedOff = svc.androidBridge.OnTunStopped(func() {
@@ -70,6 +73,7 @@ func NewAppService(dataDir string) (*AppService, error) {
 			}()
 		})
 	}
+	svc.startSubscriptionScheduler()
 	return svc, nil
 }
 
@@ -147,6 +151,11 @@ func (s *AppService) SwitchInboundMode(ctx context.Context, mode config.InboundM
 // Shutdown disconnects any active tunnel, clears system proxy and Kill Switch,
 // and gracefully terminates a locally spawned looma-helper process.
 func (s *AppService) Shutdown() error {
+	s.subStopOnce.Do(func() {
+		if s.subStopCh != nil {
+			close(s.subStopCh)
+		}
+	})
 	if s.tunStoppedOff != nil {
 		s.tunStoppedOff()
 		s.tunStoppedOff = nil
@@ -237,6 +246,8 @@ func (s *AppService) ensureHelperClient(ctx context.Context, cfg *config.AppConf
 }
 
 func (s *AppService) Connect(ctx context.Context) (*core.CompileResult, error) {
+	s.ensureAutoExternalTested(ctx)
+
 	s.mu.Lock()
 
 	cfg := s.store.Get()
@@ -445,33 +456,308 @@ func (s *AppService) ProbeChain(ctx context.Context) *probe.ChainProbeResult {
 	return s.prober.ProbeChain(ctx, cfg)
 }
 
-func (s *AppService) ImportSubscription(ctx context.Context, name, subURL string, intervalHours int) ([]config.ExternalNode, error) {
+func (s *AppService) resolveSubscriptionProxyURL(cfg *config.AppConfig, proxyMode string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(proxyMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	switch mode {
+	case "direct":
+		return "", nil
+	case "proxy":
+		if !s.GetStats().Running {
+			return "", fmt.Errorf("该订阅设置为“仅走代理更新”，请先连接代理或 VPN")
+		}
+		return fmt.Sprintf("http://127.0.0.1:%d", cfg.Inbound.HTTPPort), nil
+	default: // "auto"
+		if s.GetStats().Running && cfg.Inbound.HTTPPort > 0 {
+			return fmt.Sprintf("http://127.0.0.1:%d", cfg.Inbound.HTTPPort), nil
+		}
+		return "", nil
+	}
+}
+
+func isHTTPURL(raw string) bool {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+// ImportSubscription imports either a remote subscription URL (http/https) or
+// direct node share links / Base64 / Clash YAML / sing-box JSON payloads.
+func (s *AppService) ImportSubscription(ctx context.Context, name, subURL string, intervalHours int, proxyMode string) ([]config.ExternalNode, error) {
+	trimmed := strings.TrimSpace(subURL)
+	if trimmed == "" {
+		return nil, fmt.Errorf("请输入订阅链接或节点分享内容")
+	}
+
+	cfg := s.store.Get()
+	if !isHTTPURL(trimmed) {
+		nodes, err := subscription.ParseAuto([]byte(trimmed), "manual")
+		if err != nil {
+			return nil, fmt.Errorf("解析分享链接失败：%w", err)
+		}
+		existing := make(map[string]int, len(cfg.ExternalNodes))
+		for i, n := range cfg.ExternalNodes {
+			existing[n.ID] = i
+		}
+		for _, n := range nodes {
+			if idx, ok := existing[n.ID]; ok {
+				cfg.ExternalNodes[idx] = n
+			} else {
+				cfg.ExternalNodes = append(cfg.ExternalNodes, n)
+			}
+		}
+		if err := s.store.Save(cfg); err != nil {
+			return nil, err
+		}
+		s.notifyStateChange()
+		return nodes, nil
+	}
+
+	if intervalHours < 0 {
+		intervalHours = 24
+	}
+	if proxyMode == "" {
+		proxyMode = "auto"
+	}
 	sub := config.Subscription{
 		ID:                 fmt.Sprintf("sub-%d", time.Now().UnixNano()),
-		Name:               name,
-		URL:                subURL,
+		Name:               strings.TrimSpace(name),
+		URL:                trimmed,
+		ProxyMode:          proxyMode,
 		UpdateIntervalHour: intervalHours,
 		LastUpdatedUnix:    time.Now().Unix(),
 		Enabled:            true,
 	}
-	f := &subscription.Fetcher{}
-	nodes, err := f.Fetch(ctx, sub)
+	if sub.Name == "" {
+		sub.Name = "订阅"
+	}
+
+	proxyURL, err := s.resolveSubscriptionProxyURL(cfg, sub.ProxyMode)
 	if err != nil {
 		return nil, err
 	}
-	cfg := s.store.Get()
+	f := &subscription.Fetcher{}
+	res, err := f.FetchWithProxy(ctx, sub, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	sub.UploadBytes = res.UserInfo.UploadBytes
+	sub.DownloadBytes = res.UserInfo.DownloadBytes
+	sub.TotalBytes = res.UserInfo.TotalBytes
+	sub.ExpireUnix = res.UserInfo.ExpireUnix
+
 	cfg.Subscriptions = append(cfg.Subscriptions, sub)
-	cfg.ExternalNodes = append(cfg.ExternalNodes, nodes...)
+	cfg.ExternalNodes = append(cfg.ExternalNodes, res.Nodes...)
 	if err := s.store.Save(cfg); err != nil {
 		return nil, err
 	}
-	return nodes, nil
+	s.notifyStateChange()
+	return res.Nodes, nil
+}
+
+// RefreshSubscription fetches the latest nodes for a single subscription and
+// atomically replaces its previous nodes while keeping other groups intact.
+func (s *AppService) RefreshSubscription(ctx context.Context, subID string) ([]config.ExternalNode, error) {
+	cfg := s.store.Get()
+	subIdx := -1
+	for i := range cfg.Subscriptions {
+		if cfg.Subscriptions[i].ID == subID {
+			subIdx = i
+			break
+		}
+	}
+	if subIdx < 0 {
+		return nil, fmt.Errorf("未找到订阅：%s", subID)
+	}
+	sub := cfg.Subscriptions[subIdx]
+	proxyURL, err := s.resolveSubscriptionProxyURL(cfg, sub.ProxyMode)
+	if err != nil {
+		cfg.Subscriptions[subIdx].LastError = err.Error()
+		_ = s.store.Save(cfg)
+		return nil, err
+	}
+
+	f := &subscription.Fetcher{}
+	res, err := f.FetchWithProxy(ctx, sub, proxyURL)
+	if err != nil {
+		cfg.Subscriptions[subIdx].LastError = err.Error()
+		_ = s.store.Save(cfg)
+		return nil, err
+	}
+
+	cfg.Subscriptions[subIdx].LastUpdatedUnix = time.Now().Unix()
+	cfg.Subscriptions[subIdx].LastError = ""
+	cfg.Subscriptions[subIdx].UploadBytes = res.UserInfo.UploadBytes
+	cfg.Subscriptions[subIdx].DownloadBytes = res.UserInfo.DownloadBytes
+	cfg.Subscriptions[subIdx].TotalBytes = res.UserInfo.TotalBytes
+	cfg.Subscriptions[subIdx].ExpireUnix = res.UserInfo.ExpireUnix
+
+	kept := make([]config.ExternalNode, 0, len(cfg.ExternalNodes))
+	for _, n := range cfg.ExternalNodes {
+		if n.SubscriptionID != subID {
+			kept = append(kept, n)
+		}
+	}
+	cfg.ExternalNodes = append(kept, res.Nodes...)
+	if err := s.store.Save(cfg); err != nil {
+		return nil, err
+	}
+	s.notifyStateChange()
+	return res.Nodes, nil
+}
+
+func (s *AppService) UpdateSubscriptionSettings(subID, name string, intervalHours int, proxyMode string) error {
+	cfg := s.store.Get()
+	for i := range cfg.Subscriptions {
+		if cfg.Subscriptions[i].ID == subID {
+			if strings.TrimSpace(name) != "" {
+				cfg.Subscriptions[i].Name = strings.TrimSpace(name)
+			}
+			if intervalHours >= 0 {
+				cfg.Subscriptions[i].UpdateIntervalHour = intervalHours
+			}
+			if proxyMode == "auto" || proxyMode == "proxy" || proxyMode == "direct" {
+				cfg.Subscriptions[i].ProxyMode = proxyMode
+			}
+			if err := s.store.Save(cfg); err != nil {
+				return err
+			}
+			s.notifyStateChange()
+			return nil
+		}
+	}
+	return fmt.Errorf("未找到订阅：%s", subID)
+}
+
+func (s *AppService) DeleteSubscription(subID string) error {
+	cfg := s.store.Get()
+	subs := make([]config.Subscription, 0, len(cfg.Subscriptions))
+	for _, sub := range cfg.Subscriptions {
+		if sub.ID != subID {
+			subs = append(subs, sub)
+		}
+	}
+	nodes := make([]config.ExternalNode, 0, len(cfg.ExternalNodes))
+	for _, n := range cfg.ExternalNodes {
+		if n.SubscriptionID != subID {
+			nodes = append(nodes, n)
+		}
+	}
+	cfg.Subscriptions = subs
+	cfg.ExternalNodes = nodes
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+	s.notifyStateChange()
+	return nil
+}
+
+func (s *AppService) DeleteExternalNode(nodeID string) error {
+	cfg := s.store.Get()
+	nodes := make([]config.ExternalNode, 0, len(cfg.ExternalNodes))
+	for _, n := range cfg.ExternalNodes {
+		if n.ID != nodeID {
+			nodes = append(nodes, n)
+		}
+	}
+	cfg.ExternalNodes = nodes
+	if err := s.store.Save(cfg); err != nil {
+		return err
+	}
+	s.notifyStateChange()
+	return nil
+}
+
+func (s *AppService) RefreshDueSubscriptions(ctx context.Context) int {
+	cfg := s.store.Get()
+	now := time.Now().Unix()
+	refreshed := 0
+	for _, sub := range cfg.Subscriptions {
+		if !sub.Enabled || sub.UpdateIntervalHour <= 0 {
+			continue
+		}
+		if now-sub.LastUpdatedUnix >= int64(sub.UpdateIntervalHour)*3600 {
+			if _, err := s.RefreshSubscription(ctx, sub.ID); err == nil {
+				refreshed++
+			}
+		}
+	}
+	return refreshed
+}
+
+func (s *AppService) startSubscriptionScheduler() {
+	go func() {
+		select {
+		case <-time.After(5 * time.Second):
+		case <-s.subStopCh:
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_ = s.RefreshDueSubscriptions(ctx)
+		cancel()
+
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				_ = s.RefreshDueSubscriptions(ctx)
+				cancel()
+			case <-s.subStopCh:
+				return
+			}
+		}
+	}()
+}
+
+func (s *AppService) ensureAutoExternalTested(ctx context.Context) {
+	cfg := s.store.Get()
+	needsTest := func(ref config.HopRef) bool {
+		if ref.Kind != config.HopExternal {
+			return false
+		}
+		if ref.NodeID != "auto" && !strings.HasPrefix(ref.NodeID, "auto:") {
+			return false
+		}
+		subFilter := strings.TrimPrefix(ref.NodeID, "auto:")
+		if ref.NodeID == "auto" {
+			subFilter = ""
+		}
+		for _, n := range cfg.ExternalNodes {
+			if subFilter != "" && n.SubscriptionID != subFilter {
+				continue
+			}
+			if n.LatencyMs > 0 {
+				return false
+			}
+		}
+		return len(cfg.ExternalNodes) > 0
+	}
+	if needsTest(cfg.Chain.Hop1) || (cfg.Chain.TwoHop && needsTest(cfg.Chain.Hop2)) {
+		testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_ = s.TestAllNodes(testCtx)
+		cancel()
+	}
 }
 
 func (s *AppService) TestAllNodes(ctx context.Context) []speedtest.Result {
 	cfg := s.store.Get()
 	tester := speedtest.NewTester()
-	return tester.TestAll(ctx, cfg.ExternalNodes)
+	results := tester.TestAll(ctx, cfg.ExternalNodes)
+	latMap := make(map[string]int, len(results))
+	for _, r := range results {
+		latMap[r.NodeID] = r.LatencyMs
+	}
+	for i := range cfg.ExternalNodes {
+		if lat, ok := latMap[cfg.ExternalNodes[i].ID]; ok {
+			cfg.ExternalNodes[i].LatencyMs = lat
+		}
+	}
+	_ = s.store.Save(cfg)
+	s.notifyStateChange()
+	return results
 }
 
 type GephBridgeStatus struct {

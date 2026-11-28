@@ -22,17 +22,17 @@
   }: Props = $props();
 
   let isDirectBypass = $derived(chain.hop1.kind === "direct_bypass");
-  let externalNodeOptions = $derived(
-    sortedExternalNodes.map((node) => ({
+  let externalNodeOptions = $derived([
+    { value: "auto", label: "⚡ 自动选择优质节点（全部）" },
+    ...sortedExternalNodes.map((node) => ({
       value: node.id,
-      label: `${node.name} (${node.protocol})`,
+      label: `${node.name} (${node.protocol})${node.latency_ms && node.latency_ms > 0 ? ` · ${node.latency_ms}ms` : ""}`,
     })),
-  );
+  ]);
 
   function setHop(which: "hop1" | "hop2", kind: string) {
     const nextKind = kind as HopKind;
-    const defaultNodeId =
-      nextKind === "external" ? sortedExternalNodes[0]?.id : undefined;
+    const defaultNodeId = nextKind === "external" ? "auto" : undefined;
     chain = {
       ...chain,
       two_hop:

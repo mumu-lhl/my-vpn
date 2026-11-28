@@ -2,8 +2,12 @@ package speedtest
 
 import (
 	"context"
-	"net/http"
+	"crypto/tls"
+	"errors"
+	"net"
+	"strconv"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,7 +51,7 @@ func (t *Tester) TestAll(ctx context.Context, nodes []config.ExternalNode) []Res
 	}
 	probe := t.Probe
 	if probe == nil {
-		probe = defaultHTTPProbe
+		probe = defaultNodeProbe
 	}
 
 	sem := make(chan struct{}, conc)
@@ -88,16 +92,36 @@ func (t *Tester) TestAll(ctx context.Context, nodes []config.ExternalNode) []Res
 	return results
 }
 
-func defaultHTTPProbe(ctx context.Context, _ config.ExternalNode, testURL string) (time.Duration, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, testURL, nil)
-	if err != nil {
-		return 0, err
+func defaultNodeProbe(ctx context.Context, node config.ExternalNode, _ string) (time.Duration, error) {
+	if strings.TrimSpace(node.Server) == "" || node.Port <= 0 {
+		return 0, errors.New("missing node server or port")
 	}
+	addr := net.JoinHostPort(node.Server, strconv.Itoa(node.Port))
+	dialer := &net.Dialer{}
 	start := time.Now()
-	resp, err := http.DefaultClient.Do(req)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return 0, err
 	}
-	_ = resp.Body.Close()
+	defer conn.Close()
+
+	if tlsMap, ok := node.RawOutbound["tls"].(map[string]any); ok {
+		if enabled, _ := tlsMap["enabled"].(bool); enabled {
+			sni, _ := tlsMap["server_name"].(string)
+			if sni == "" {
+				sni = node.Server
+			}
+			tlsConn := tls.Client(conn, &tls.Config{
+				ServerName:         sni,
+				InsecureSkipVerify: true,
+			})
+			if deadline, ok := ctx.Deadline(); ok {
+				_ = tlsConn.SetDeadline(deadline)
+			}
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				return 0, err
+			}
+		}
+	}
 	return time.Since(start), nil
 }
