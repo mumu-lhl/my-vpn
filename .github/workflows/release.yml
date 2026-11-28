@@ -293,15 +293,17 @@ jobs:
 
           if [[ "$NIGHTLY_EXISTS" == true ]]; then
             gh release upload nightly --clobber "${assets[@]}"
-            gh release edit nightly --prerelease --latest=false --title "$title" --notes "$notes"
+            gh release edit nightly --target "$GITHUB_SHA" --prerelease --latest=false --title "$title" --notes "$notes"
           else
             gh release create nightly --target "$GITHUB_SHA" \
               --prerelease --latest=false --title "$title" --notes "$notes" "${assets[@]}"
           fi
 
-          # Only advance the tag after the release assets and metadata are in place.
+          # Advance the tag ref when permitted (GitHub blocks GITHUB_TOKEN from pointing tags
+          # at commits that modify .github/workflows/*).
           gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" \
-            -f "sha=$GITHUB_SHA" -F force=true --silent
+            -f "sha=$GITHUB_SHA" -F force=true --silent || \
+            echo "::warning::Could not advance nightly tag ref (expected when commit modifies .github/workflows/*)."
 
   publish-release:
     needs: [prepare, build-linux, build-android]
